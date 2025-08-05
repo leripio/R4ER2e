@@ -36,7 +36,7 @@ install.packages(
 
 ## 🔄 Reproducibility
 
-This project uses the [`renv`](https://rstudio.github.io/renv/) package to manage the R package environment. See the `renv.lock` file   
+This project uses the [`renv`](https://rstudio.github.io/renv/) package to manage the R package environment. See the `renv.lock` file in the repo.  
 To reproduce the exact environment used in the book, you can run:
 
 ```r
