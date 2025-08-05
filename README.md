@@ -1,4 +1,4 @@
-# R for Economic Research <img src="images/cover.png" align="right" height="300"/>
+# R for Economic Research (2e) <img src="images/cover.png" align="right" height="300"/>
 
 **R for Economic Research** is a practical guide that teaches essential tools for data analysis and modeling in economics using the R programming language. The book is aimed at economists, researchers, and data professionals who want to enhance their analytical skills using open-source tools.
 
