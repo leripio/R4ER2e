@@ -1,6 +1,6 @@
 # R for Economic Research
 
-![Book Cover](images/cover.png)
+<img src="images/cover.png" alt="Book Cover" width="300"/>
 
 **R for Economic Research** is a practical guide that teaches essential tools for data analysis and modeling in economics using the R programming language.  
 It covers real-world applications ranging from data cleaning and visualization to time series analysis and forecasting.
