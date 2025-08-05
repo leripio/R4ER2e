@@ -11,7 +11,7 @@ The book is aimed at economists, researchers, and data professionals who want to
 
 </td>
 <td style="vertical-align: top; padding-left: 20px;">
-<img src="cover_small.png" alt="Book Cover" width="200"/>
+<img src="images/cover.png" alt="Book Cover" width="200"/>
 </td>
 </tr>
 </table>
