@@ -25,6 +25,19 @@ install.packages(
 
 ---
 
+## 🔄 Reproducibility
+
+This project uses the [`renv`](https://rstudio.github.io/renv/) package to manage the R package environment.  
+To reproduce the exact environment used in the book, you can run:
+
+```r
+renv::restore()
+```
+
+This will install all required packages with the correct versions as used in the code examples.
+
+---
+
 ## 📖 License and Contributions
 
 This project is open for contributions and feedback.  
