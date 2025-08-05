@@ -2,7 +2,7 @@
 
 Until recently, working with big data offered two main alternatives: relying on your IT team to set up an appropriate database or attempting to fit massive files into your computer's memory. For those working independently, the first option might be impractical, while the second is bound to reach its limits quite rapidly.
 
-In the introductory chapter (see #tidyverse), we explored how to import data from APIs. This method proves highly useful, as it allows us to filter the data we need directly at the source. However, certain limitations remain. For instance, we can only filter data based on the parameters provided by the API --- which are often limited. An even greater challenge arises when an API is simply unavailable, leaving us with nothing but a large CSV file. So, how can we proceed?
+In the [introductory chapter](#tidyverse), we explored how to import data from APIs. This method proves highly useful, as it allows us to filter the data we need directly at the source. However, certain limitations remain. For instance, we can only filter data based on the parameters provided by the API --- which are often limited. An even greater challenge arises when an API is simply unavailable, leaving us with nothing but a large CSV file. So, how can we proceed?
 
 I attended the Posit Conference in 2024 and, among very fascinating talks, one stood out: Hannes Mühleisen, CEO and Co-Founder of [DuckDB](https://duckdb.org) ([video here](https://youtu.be/GELhdezYmP0?si=VQ0sFwlEb6VkZZkm)). I'm not a data engineer, so I won't dive too deeply into how DuckDB works behind the scenes. As a data scientist, I'm more interested in exploring how I can benefit from it.
 
