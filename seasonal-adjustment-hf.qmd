@@ -1,0 +1,156 @@
+# Seasonal adjustment of high-frequency data
+
+In the previous chapter, we went through all the steps to perform the seasonal adjustment of a time series, using an indicator from Brazilian retail sales to illustrate the technique. However, one detail was left between the lines: the method employed, namely the U.S Census Bureau's X-13-ARIMA, is well suited for monthly and quarterly data, but was not particularly designed for high-frequency data.
+
+Until recently, this wasn't much of an issue, but the growing use of alternative data has made it a real limitation. Fortunately, there are a handful of tools available to work with this type of data, each with its own pros and cons. For the purposes of this chapter, I will present two methods that I consider the most useful for day-to-day applications, using the `credit_card_br` dataset, which contains alternative indicators for economic activity in Brazil based on credit card transactions.
+
+::: {.callout-tip}
+## Data
+The credit_card_br dataset is available in the `R4ER2data` package under the name `credit_card_br`.
+:::
+
+Let's start by getting a quick glimpse of our dataset.
+
+```{r}
+#| warning: false
+library(R4ER2data)
+library(tidyverse)
+
+credit_card_br <- R4ER2data::credit_card_br
+credit_card_br |> glimpse()
+```
+
+The dataset contains daily series of credit card transactions spanning from 2018 to 2023, divided into two major categories --- goods and services --- and some of their subcategories. Now, let's plot a small portion of the sample to get an idea of what the data looks like in terms of seasonality.
+
+```{r}
+credit_card_br |> 
+  filter(between(date, as.Date('2023-02-01'), as.Date('2023-04-01'))) |> 
+  ggplot() +
+  geom_line(aes(x = date, y = goods), lwd = 1) +
+  labs(
+    title = 'Credit card transactions for goods',
+    subtitle = 'Index (2018 = 100). Current prices (BRL).'
+  )
+```
+
+Unlike monthly or quarterly time series, the main challenge with daily time series is that they can exhibit multiple overlapping seasonal patterns --- annual, monthly, and weekly. This makes it particularly difficult to visualize these patterns in a single plot. For instance, in the chart above, a weekly seasonal pattern is noticeable. However, if we increase the sample size, it might become harder to identify other patterns.
+
+```{r}
+credit_card_br |> 
+  filter(between(date, as.Date('2022-01-01'), as.Date('2022-12-01'))) |> 
+  ggplot() +
+  geom_line(aes(x = date, y = goods), lwd = 1) +
+  labs(
+    title = 'Credit card transactions for goods',
+    subtitle = 'Index (2018 = 100). Current prices (BRL).'
+  )
+```
+
+For this reason, we seek to employ effective methods to identify and estimate the various seasonal patterns present in the series, allowing us to uncover the underlying trends in the data. This is where the following methods come into play.
+
+### Prophet
+
+[Prophet](https://facebook.github.io/prophet/) is a forecasting model developed by Meta, designed to handle time series of various frequencies. Among other outputs, it returns the fitted and future values for the time series components (trend and seasonality), allowing us to compute a seasonally adjusted version of the data. Importantly, this method also supports the inclusion of special events, such as outliers and custom holidays, which increases the robustness of the results.
+
+Let's start by preparing the input data. Prophet requires a data frame with two columns: *ds*, which contains the dates; and *y*, which contains the target time series. Taking the logarithm of *y* helps reduce volatility and makes the relationship between its components linear.
+
+```{r}
+goods_df <- credit_card_br |> 
+  select(ds = date, y = goods) |> 
+  mutate(y = log(y))
+```
+
+Since Black Friday is an important event for retail sales, it makes sense to include it in the model. For this purpose, we need to create an additional data frame with two columns: *ds* (dates) and *holiday* (the event's label). Any other special events can be added to this data frame.
+
+To create the vector with the Black Friday dates for each year in the dataset, I will take advantage of the `Thanksgiving` dates vector provided by the `tis` package.
+
+```{r}
+library(lubridate)
+
+special_events <- tibble(
+  ds = map_chr(
+    .x = 2018:2023,
+    .f = ~ tis::holidays(.x)['Thanksgiving'] |> 
+      ymd() %m+% 
+      days(1) |> 
+      as.character()
+  ),
+  holiday = 'Black Friday'
+) 
+```
+
+The process of fitting the model is carried out in layers, where we first layer define some preliminary settings and the model is then estimated using the `fit.prophet` function.
+
+```{r}
+#| warning: false
+library(prophet)
+
+m <- prophet(holidays = special_events)
+m <- add_country_holidays(m, country_name = 'BR')
+m <- fit.prophet(m, goods_df)
+```
+
+We can access all the holidays and special events included in the model through the `train.holidays.names` object.
+
+```{r}
+m$train.holiday.names
+```
+
+Many important holidays in Brazil are not included in the built-in holidays vector and could be added to the `special_events` data frame. However, I will leave that aside for now and move forward. The next step is to create a data frame with future dates for prediction. Even though we are not interested in future values, this step is necessary to obtain a tidy outcome.
+
+```{r}
+future_df <- make_future_dataframe(
+  m, 
+  periods = 1,
+  freq = 'day', 
+  include_history = TRUE
+)
+
+m_forecast <- predict(m, future_df)
+```
+
+The `m_forecast` object contains all the components estimated by the model, including the aggregate seasonal effect and the individual effects of each holiday or special event. We can easily visualize them using the appropriate function.
+
+```{r}
+prophet_plot_components(m, m_forecast)
+```
+
+The first panel shows the trend, which was severely hit by the COVID-19 episode and returned to the pre-pandemic levels by mid-2021. The next three panels provide information about the series' seasonal pattern. More specifically, retail sales experience a sharp drop every December 25th and January 1st (panel 2), a justified occurrence since the majority of brick-and-mortar stores are closed on these days. The same reasoning above explains why lower sales are recorded on Sundays (panel 3).
+
+While most holidays show a modest impact, the Black Friday event, as expected, has a significant positive effect on sales (panel 2). Regarding the yearly pattern (panel 4), it's no surprise that sales exhibit an upward trend starting in the last quarter of the year, reaching a peak in December.
+
+The package also includes a function to plot the fitted values of the model, which can be useful for identifying patterns that were not properly modeled. For example, a better fit could be achieved by including other important holidays such as Carnival and Corpus Christi, or by adding special events for extended holidays.
+
+```{r}
+#| warning: false
+dyplot.prophet(m, m_forecast)
+```
+
+<br> Assuming this is our ready-to-go version of the model, we could use the estimated aggregated seasonal effect (the column `additive_terms`) to subtract from the original data (since we applied a log transformation) and obtain seasonally adjusted data. Remember, we need to apply `exp` to back-transform the values into the original scale.
+
+```{r}
+goods_df_sa <- m_forecast |> 
+  select(ds, additive_terms) |> 
+  left_join(goods_df, by = 'ds') |> 
+  mutate(y_sa = y - additive_terms) |> 
+  mutate(across(c(y, y_sa), ~ exp(.x))) |> 
+  rename(c('date'= 'ds', 'goods' = y, 'goods_sa' = y_sa))
+
+goods_df_sa |>   
+  filter(between(date, as.Date('2023-02-01'), as.Date('2023-04-01'))) |> 
+  ggplot() +
+  geom_line(aes(x = date, y = goods, color = 'Original'), lwd = 1) +
+  geom_line(aes(x = date, y = goods_sa, color = 'Seasonally-Adjusted'), lwd = 1) +
+  labs(
+    title = 'Credit card transactions for goods',
+    subtitle = 'Index (2018 = 100). Current prices (BRL).',
+    color = ''
+  )
+
+```
+
+The plot above shows that we were able to eliminate the largest regularly spaced peaks and troughs, although some residual seasonality might still be present in the data. From this point onward, it's a matter of addressing the remaining holidays and special events that might still affect the model estimates until we feel comfortable with the result.
+
+Additionally, other features, such as trend changepoints, might play a role. To explore the additional features available in Prophet and better understand how to fine-tune its default parameters, I strongly recommend reading the package's [documentation](https://facebook.github.io/prophet/docs/quick_start.html#r-api).
+
+### DSA

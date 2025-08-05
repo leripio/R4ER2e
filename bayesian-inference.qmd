@@ -1,0 +1,263 @@
+# Bayesian Inference
+
+I'm deeply grateful to [Igor Martins](http://linkedin.com/in/igor-ferreira-batista-martins-8658b2125) for introducing me to Stan and Bayesian Inference.
+
+## Introduction
+
+All the models we have developed so far were estimated entirely within the frequentist paradigm. Regression models were estimated using standard Ordinary Least Squares (OLS), while latent variables in state-space models were computed via Maximum Likelihood (ML). OLS estimates the coefficients by minimizing the sum of squared residuals — the differences between observed and fitted values — whereas ML estimates the coefficients by maximizing the likelihood function. Despite this difference in approach, both methods rely exclusively on information contained in the data sample for coefficient estimation, leaving no room to incorporate prior knowledge or other external sources of information.
+
+Bayesian inference adds two key features. First, it incorporates prior information about the coefficients alongside sample data, giving expert knowledge or beliefs a central role in the estimation procedure. Second, rather than producing a single point estimate for the parameters, it generates a full distribution (the posterior), providing a richer understanding of the uncertainty surrounding these estimates.
+
+For those new to Bayesian inference, I highly recommend Richard McElreath's [*Statistical Rethinking*](https://www.youtube.com/watch?v=FdnMWdICdRs) course. To follow the rest of this chapter, however, consider the formulation below, which adapts the Bayes' Theorem to the regression context. Simply put, the distribution of the beta coefficient (the posterior) is derived by combining prior knowledge or beliefs about beta (the prior distribution) with the model that links beta to the data (the likelihood), according to the equation below: [^bayesian-inference-1]
+
+[^bayesian-inference-1]: A proportional relationship is often used because the full form of Bayes' Theorem includes a normalization term that ensures the result sums to one, which is frequently omitted without loss of generality.
+
+$$ \underbrace{P(\beta|\text{data})}_{\text{Posterior}} \propto \underbrace{P(\beta)}_{\text{Prior}} \times \underbrace{P({\text{data}|\beta})}_{\text{Likelihood}} $$
+
+### The likelihood function
+
+The **likelihood function** quantifies the probability of observing the sample data given an assumed model and its parameters. Consider a simple linear regression model for $Y_t$, defined as:
+
+$$ Y_t = \beta_1 + \beta_2 X_t + \epsilon_t, $$
+
+where $Y_t$ and $X_t$ are observed variables, and $\epsilon_t$ represents the random error term.
+
+In this framework, $\beta_1$ and $\beta_2$ are treated as unknown but fixed parameters. Consequently, the probability of observing $Y_t$ depends on the distributional assumption for $\epsilon_t$. If we assume that $\epsilon_t$ is normally distributed with zero mean and constant variance $\sigma^2$, it follows that each observation of $Y_t$ is also normally distributed, with mean $\beta_1 + \beta_2 X_t$ and variance $\sigma^2$. Under the additional assumption that the elements of $Y_t$ are independent, the likelihood function becomes the product of normal probability density functions, where:
+
+-   $\mu = \mathbb{E}[Y_t] = \beta_1 + \beta_2 X_t$, and
+
+-   $\mathbb{V}[Y_t] = \sigma^2$
+
+The likelihood function is then written as:
+
+$$ \mathbb{L}(\beta_1, \beta_2, \sigma^2 \mid Y_t, X_t) = \prod_{t=1}^T \frac{1}{\sqrt{2\pi\sigma^2}} \exp\left(-\frac{(Y_t - (\beta_1 + \beta_2 X_t))^2}{2\sigma^2}\right) $$
+
+For our proposes, it is sufficient to keep in mind that:
+
+$$ Y_t \sim \mathbb{N}(\beta_1 + \beta_2 X_t, \sigma^2) $$ More generally, the distribution of $Y_t$ mirrors the distribution of the error term $\epsilon_t$, with the model for $Y_t$ determining the parameters of this distribution. In the case of a normal distribution, these parameters are the mean $\mu = \beta_1 + \beta_2 X_t$ and variance $\sigma^2$.
+
+### The priors on coefficients
+
+**The prior** is a defining feature of Bayesian inference. It enables us to incorporate our beliefs about the distribution of the coefficients into the model. The linear model for $Y_t$ discussed above requires appropriate priors for $\beta_1$, $\beta_2$, and $\sigma^2$. What should these priors be?
+
+At a fundamental level, the chosen distribution must respect the properties of the coefficient. For instance, $\sigma^2$ represents the variance of the error term $\epsilon_t$ and must be non-negative. As a consequence, we need distributions that return only non-negative values. These include distributions natively bounded at zero on the left -- such as the *Gamma* distribution -- or truncated versions of unconstrained distributions, such as the *Half-Cauchy*, which is restricted to the positive domain of the *Cauchy* distribution.
+
+After ensuring that the chosen distribution does not violate the properties of the coefficients, we must decide the extent to which our prior is *informative*. Suppose we choose the *Gamma* distribution as the prior for $\sigma^2$. This distribution has two parameter -- `shape` and `scale` -- that controls its attributes, such as mean, variance, and kurtosis. Generally, the tighter the distribution, the more *informative* the prior becomes, as it reflects greater confidence about the likely values the coefficient may take.
+
+Understanding how the parameters influence the shape of a distribution can be challenging. Thus, experimenting with different parameter values is often a practical way to align the distribution with our beliefs. Below is a code snippet that plots the density of the *Gamma* distribution for various combinations of the `shape` and `scale` parameters. Note that R provides built-in functions for generating similar plots for many other distributions -- e.g. `dbeta`, `dnormal`, `dcauchy` and so on.
+
+```{r}
+#| warning: false
+library(tidyverse)
+
+gamma_params <- list(
+  gamma1 = c(shape = 2, scale = 2),
+  gamma2 = c(shape = 1, scale = 2),
+  gamma3 = c(shape = 8, scale = 1)
+)
+
+gamma_densities <- map_df(
+  gamma_params,
+  ~ tibble(
+    quantiles = seq(0, 25, 0.1)
+  ) |> mutate(
+    value = dgamma(quantiles, shape = .x['shape'], scale = .x['scale']),
+    shape = .x['shape'],
+    scale = .x['scale'],
+    id    = paste0('shape = ', shape, '; scale = ', scale)
+  )
+)
+
+gamma_densities |> 
+  ggplot() +
+  geom_line(aes(x = quantiles, y = value)) +
+  facet_wrap(~ id, scales = 'free')
+
+```
+
+The panels, from left to right, reflect an increasing belief that $\sigma^2$ can take on higher values. The same exercise could be done for $\beta_2$, the effect of $X_t$ on $Y_t$. For instance, one might believe that $\beta_2$ is equally likely to lie between 0 and 1. This belief can be represented by a *Uniform* distribution with parameters `min = 0` and `max = 1`. Alternatively, one could argue that $\beta_2$ is much more likely to be close to 0 than to 1, in which case a *Beta* distribution with parameters $\alpha = 2$ and $\beta = 5$ might be a more suitable choice.
+
+```{r}
+beta25 <- tibble(
+  quantiles = seq(0,1,0.01),
+  value = dbeta(quantiles, 2, 5)
+)
+
+beta25 |> 
+  ggplot() +
+  geom_line(aes(x = quantiles, y = value))
+
+```
+
+Successfully employing Bayesian inference requires the ability to translate beliefs into appropriate probability density distributions. The first step is to identify a distribution that delivers the desired shape. Then, experiment with different parameter values until you are satisfied with the result. To achieve this, consulting resources like Wikipedia to understand the properties of popular distributions and using R functions to explore different parameterizations can often suffice.
+
+## Estimating models
+
+Combining these two sources of information -- the model for $Y_t$ and priors for the coefficients -- yields the posterior distribution of the coefficients. From this distribution, we can extract central values such as the mean or median, as well as specific quantiles to assess uncertainty. However, this description might suggest that the process is straightforward, which is not always the case. Computing the posterior can demand substantial computational resources. The recent surge in the use of Bayesian inference by applied researchers is largely driven by advances in algorithms that efficiently approximate the posterior distribution.
+
+This brings us to the main goal of this chapter, namely demonstrating the use of [Stan](https://mc-stan.org/rstan/) to perform Bayesian inference. Stan is a powerful platform for statistical modeling, offering interfaces for popular programming languages, including R. In addition to its relatively user-friendly syntax, Stan leverages state-of-the-art algorithms to compute posterior distributions, significantly reducing the computational burden typically associated with parameter estimation.
+
+There are several R packages that provide functionalities for estimating Bayesian models, often using Stan as a back-end. While these packages are convenient for standard models, such as Bayesian versions of Generalized Linear Models, they lack the flexibility required to handle more complex models.
+
+For this reason, I strongly recommend learning Stan's syntax, which will be the focus of the remainder of this chapter. Professor Hedibert Lopes' [website](https://hedibert.org/wp-content/uploads/2021/02/stan-rstan-examples.html) is a valuable resource for learning Stan syntax, offering numerous model examples. I suggest exploring it after mastering the basics to deepen your understanding of the syntax.
+
+### Stan syntax
+
+In its simplest form, Stan requires three essential blocks: `data`, `parameters`, and `model`. These blocks are intuitive, so we can skip detailed descriptions and proceed directly to an example. Consider the simple linear regression model introduced earlier in this chapter:
+
+$$ Y_t = \beta_1 + \beta_2 * X_t + \epsilon_t $$ The available data for this model are the variables $Y_t$ and $X_t$ and the parameters we aim to estimate are $\beta_1$, $\beta_2$, and $\sigma^2$, the variance of the error term. The model block specifies the likelihood and the priors for the coefficients. The likelihood depends on the assumption made for the error term, as discussed in the introduction. Assuming a Normal distribution for the error term $\epsilon_t$, the likelihood is:
+
+$$ Y_t \sim \mathbb{N}(\beta_1 + \beta_2 * X_t,\sigma^2) $$ For the priors, we can assume:
+
+-   A Normal distribution with parameters $\mu = 0$ and $\sigma^2 = 1$ for $\beta_1$, indicating that $\beta_1$ can take both negative and positive values, although with a higher probability of being close to zero.
+
+-   A Beta distribution with parameters $\alpha = 2$ and $\beta = 5$ for $\beta_2$, restricting it to values between 0 and 1, although with a higher probability of lying between 0 and 0.50.
+
+The code snippet below combines the three essential blocks. There are a few important details to note. In Stan, data and parameters must be declared as objects: `int` or `real` for single values, `vector` for sets of values, and `matrix` for multi-column structures. Multi-valued objects must be assigned appropriate dimensions (e.g., the number of elements in a vector). These dimensions can either be declared directly in the Stan file if they are fixed or provided as external inputs when they are expected to vary. Additionally, objects can be constrained using the `<lower=MIN>` and `<upper=MAX>` syntax to enforce bounds on their values
+
+``` stan
+data {
+  int<lower=1> T;
+  real y[T];
+  real x[T];
+}
+parameters {
+  vector[2] beta;
+  real<lower=0> sigma;
+}
+model {
+  y ~ normal(beta[1] + beta[2] * x, sigma);
+  sigma ~ gamma(1,1);
+  beta[1] ~ normal(0,1);
+  beta[2] ~ beta(2,5);
+}
+```
+
+Once you have completed writing the Stan code, save it with the `.stan` extension. RStudio offers built-in support for editing Stan code, allowing you to create `.stan` files directly. To do this, navigate to the menu and select **File \>\> New File \>\> Stan File**.
+
+The final step involves using the appropriate function from the `rstan` package to compute the posterior distributions of the coefficients. This will be demonstrated in the next section using a real dataset, where we estimate a Phillips Curve for the Brazilian economy. Make sure you have successfully installed the `rstan` package.
+
+### Example: Phillips Curve
+
+The Phillips Curve used in the example closely follows the specification adopted by the Brazilian Central bank in its [semi-structural model](https://www.bcb.gov.br/content/ri/relatorioinflacao/202406/ri202406b12p.pdf). According to this specification, core inflation is a function of lagged core and headline inflation, inflation expectations, commodity prices, the BRL/USD exchange rate, and the the output gap.[^bayesian-inference-2]
+
+[^bayesian-inference-2]: This specification differs slightly from that of the Brazilian Central Bank by omitting climate variables, and using the cyclical component of GDP as *proxy* for the output gap.
+
+$$ 
+\begin{align}
+CPI^{\text{core}}_t = \beta_1 * CPI^{\text{core}}_{t-1} + \beta_2 * CPI^{\text{headline}}_{t-1} + (1 - \beta_1 - \beta_2) * CPI^{\text{exp}}_{t} + \\ \beta_3 * \Delta Commdt^{\text{USD}}_{t} + \beta_4 * \Delta BRL_{t-1} + \beta_5 * GDP^{\text{cycle}}_{t} + \epsilon_t 
+\end{align}
+$$
+
+::: callout-tip
+## Data
+
+The data set containing the variables for this exercise is available in the `R4ER2data` package under the name `phillips_br`.
+:::
+
+```{r}
+library(R4ER2data)
+
+pc_data <- R4ER2data::phillips_br |> 
+  tibble::column_to_rownames('date') |> 
+  as.matrix()
+```
+
+The code snippet below presents the model written in the Stan language. Take a moment to inspect it before I highlight a few key aspects worth noting.
+
+``` stan
+data {
+  int<lower=1> N; // Number of observations 
+  int<lower=1> K; // Number of columns
+  matrix[N,K] df; // Data on dependent variable and predictors
+}
+parameters {
+  vector[K-2] beta;      // Vector of model coefficients
+  real<lower=0> sigma; // Length 1 object for sigma
+}
+model {
+  df[, 1] ~ normal(beta[1] * df[, 2] + beta[2] * df[, 4] + (1 - beta[1] - beta[2]) * df[, 3] + beta[3] * df[, 5] + beta[4] * df[, 6] + beta[5] * df[, 7], sigma); // Likelihood
+  beta ~ normal(0,1);          // Prior for the coefficients
+  sigma ~ gamma(0.5,1);       // Prior for error variance
+}
+```
+
+A few things to note:
+
+1.  By selecting a Normal distribution as the prior for the regressors' coefficients, I am expressing a lack of strong prior knowledge about their values. Specifically, this choice reflects a belief that these coefficients are unlikely to deviate by more than two standard deviations from zero. In fact, according to the Brazilian Central Bank's estimates, all coefficients fall within the range of 0.011 to 0.38.
+
+2.  A similar rationale applies to the distribution of $\sigma$, where the $Gamma(0.5, 1)$ prior reflects a higher probability for this parameter to lie between 0 and 1.
+
+3.  To the best of my knowledge, Stan does not support using variable names as indexes. Therefore, when using a matrix as data input, it is crucial to carefully assign the correct variable positions when writing the model. For instance, note that in our dataset, the variables are not arranged in the same order as in the equation.[^bayesian-inference-3]
+
+4.  The length of the coefficient vector $\beta$ is $K - 2$, where $K$ is the total number of columns in the dataset. This subtraction accounts for the verticality constraint imposed on the Phillips Curve, which reduces the number of coefficients by one. Additionally, the first column represents the dependent variable.
+
+5.  I could have assigned a different prior to each regressor coefficient. However, since my beliefs about them were not distinct, I opted for a more compact notation. Conversely, I could have written the likelihood in matrix notation, which would also make it more compact. For now, though, I felt it would be easier to understand if I adopted the same language used in R formula objects.
+
+[^bayesian-inference-3]: In production environments, I strongly recommend programmatically generating the model and mapping variable names to their corresponding positions. This approach significantly reduces the likelihood of errors.
+
+Having clarified these points, we are now ready to run the model. The code below loads the model written to disk as `pc1_br.stan` in the `data` folder, while the `data_pc1` object specifies the external inputs left as placeholders in the Stan code. All parameters controlling the estimation procedure, such as the number of chains and iterations, will be left at their default values. Additionally, I will not provide initial values for the parameters. Finally, we call the `sampling` function to generate samples from the posterior distribution of the parameters.
+
+```{r}
+#| warning: false
+#| message: false
+#| cache: true
+library(rstan)
+
+set.seed(123)
+
+pc1_model <- stan_model(
+ file = 'data/pc1_br.stan' 
+)
+
+data_pc1 <- list(
+ df = pc_data,
+ N = nrow(pc_data),
+ K = ncol(pc_data)
+)
+
+pc1_fit <- sampling(
+ pc1_model,
+ data_pc1,
+ verbose = FALSE
+)
+```
+
+After the sampling procedure is completed, the first step is to analyze the reliability of the model. To do this, it is useful to call the model fit object. This prints not only parameter estimates but also includes important statistics, the most critical being the `R-hat`.
+
+Significant departures of `R-hat` from 1 (values above 1.1) indicate that the chains have not mixed well, and the results may not be reliable. This issue can arise due to various factors, with the most likely culprit being the model specification -- such as priors that poorly represent the coefficients -- or the absence of initial values when they are necessary to guide the algorithm. If you encounter warnings while running your own models, refer to the Stan [diagnostics and warnings](https://mc-stan.org/learn-stan/diagnostics-warnings.html) help page for guidance.
+
+### Analysing results
+
+As mentioned ealier, the print of the model fit object provides an initial overview of the results, including the mean, median, and quantiles from the posterior distribution of the parameters. This is a good starting point, as it allows us to assess whether the estimated coefficients fall within the expected range or have the appropriate sign.
+
+```{r}
+pc1_fit
+```
+
+I will not provide a thorough analysis of the results, as that would require a comprehensive course in Bayesian inference. For those interested in exploring the topic in more detail, I recommend reviewing the documentation of the [bayestestR](https://easystats.github.io/bayestestR/articles/probability_of_direction.html) package.
+
+However, the most important question we aim to answer when estimating a model is whether a given coefficient is *"significant"*. This is a somewhat tricky question, but in the frequentist paradigm, it usually involves checking for low p-values (e.g., below the 5% threshold). In Bayesian inference, this can be addressed by inspecting the distribution of the parameter.
+
+We can compute custom statistics directly from the samples of the posterior distribution. For example, suppose we assume that a coefficient is *"significant"* only if zero is not included in the 20% - 80% range. Then we could compute:
+
+```{r}
+posterior_samples   <- rstan::extract(pc1_fit)
+beta3_percentile_80 <- quantile(posterior_samples$beta[, 3], prob = c(0.2, 0.8))
+beta3_percentile_80
+```
+
+We can use the `posterior_samples` object along with `ggplot2` to summarize the results in a more elegant and visually appealing way. Alternatively, the [bayesplot](https://mc-stan.org/bayesplot/index.html) package offers a variety of useful functions for this purpose. It is important to note, however, that `bayesplot` takes the model fit object rather than the posterior samples. For instance, the `mcmc_areas` function allows you to plot the density of the coefficients of interest, with shaded areas representing the desired interval.
+
+```{r}
+#| message: false
+#| warning: false
+
+library(bayesplot)
+
+mcmc_areas(
+ pc1_fit, 
+ pars = c('beta[3]', 'beta[4]'),
+ prob = 0.8
+)
+```

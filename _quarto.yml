@@ -1,0 +1,62 @@
+project:
+  type: book
+
+book:
+  title: "R for Economic Research (2e)"
+  description: "Essential tools for modern economic analysis"
+  author: "J. Renato Leripio"
+  date: "4/30/2023"
+  repo-url: https://github.com/leripio/R4ER2e
+  site-url: "http://book.rleripio.com"
+  google-analytics: "G-6T89HT07F5"
+  cover-image: "images/cover.png"
+  chapters:
+    - index.qmd
+    - part: 'Data science skills'
+      chapters:
+      - tidyverse-intro.qmd
+      - scaling-up.qmd
+      - big-data.qmd
+    - part: 'Basic time series tools'
+      chapters:
+      - indexing-operations.qmd
+      - seasonal-adjustment.qmd
+      - seasonal-adjustment-hf.qmd
+      - deflating-values.qmd
+      - hp-filter.qmd
+    - part: 'Forecasting'
+      chapters:
+      - forecasting-the-basic-workflow.qmd
+      - forecasting-through-analogy.qmd
+      - forecasting-through-scenarios.qmd
+    - part: 'Economic modeling'
+      chapters:
+      - modeling-single-equation.qmd
+      - modeling-multiple-equations.qmd
+      - dimensionality-reduction.qmd
+      - bayesian-inference.qmd
+    - part: 'State-space models'
+      chapters:
+      - state-space-intro.qmd
+      - time-varying-coefficients.qmd
+      - dynamic-factor-model.qmd
+      - mixed-frequency.qmd
+  search: true
+  twitter-card:
+    image: "images/preview.png"
+  #downloads: [pdf, epub]
+  sharing: [twitter, facebook, linkedin]
+  sidebar:
+    style: docked
+    background: light
+
+bibliography: references.bib
+    
+format:
+  html:
+    theme: cosmo
+  epub:
+    toc: true
+    html-math-method: mathml
+
+editor: visual

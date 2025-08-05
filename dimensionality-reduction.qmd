@@ -1,0 +1,313 @@
+# Dimensionality reduction
+
+In today's data-driven world, we increasingly encounter vast datasets that must be distilled into meaningful insights. A common challenge arises when there are dozens, hundreds, or even thousands of potential predictors for a target variable. Many of these predictors are highly correlated, making them redundant, while others exhibit little or no relationship with the outcome of interest, rendering them ineffective. Without the appropriate tools to manage such complexity, it's all too easy to become overwhelmed or face technical hurdles.
+
+For example, standard OLS regression is well known to struggle in high-dimensional settings. First, the number of predictors must be fewer than the available observations. Yet, including too many predictors relative to the sample size tends to inflate the variance of the coefficient estimates. A similar challenge arises even when only a few highly correlated variables are included, sometimes causing coefficient signs to reverse and thereby undermining the reliability of the results. This chapter outlines two widely used tools designed to tackle the challenges of handling high-dimensional data and isolating the most informative features.
+
+In this exercise, the focus is on a dataset comprising time series data of prices for 33 perfumes collected from websites. The ultimate goal is to select the relevant information that help to explain the variation in the Consumer Price Index (CPI) for perfumes in Brazil. The data on perfumes prices was collected at a daily frequency, and were then aggregated to match the bi-monthly releases of the Brazilian CPI. The sample covers a period from May 2022 to September 2024, resulting in 58 observations.
+
+::: {.callout-tip}
+## Data
+The data set containing the variables for this exercise is available in the `R4ER2data` package under the name `perfume_prices_cpi_br`.
+:::
+
+Let's start by importing the dataset and visualizing its variables. To facilitate inspection of the series, I randomly assigned each product to one of four blocks.
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(R4ER2data)
+
+perfume_prices_cpi_br <- R4ER2data::perfume_prices_cpi_br
+```
+
+```{r}
+#| echo: false
+perfume_prices_cpi_br |> 
+  pivot_longer(
+    cols = starts_with('product'), 
+    names_to = 'var',
+    values_to = 'value'
+  ) |> 
+  group_by(var) |> 
+  mutate(
+    block = paste0('Set of products #', sample(1:4, 1))
+  ) |> 
+  ungroup() |> 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = value, color = var), lwd = 1) +
+  geom_line(aes(y = cpi_perfume), color = 'black', lwd = 1) +
+  guides(color = 'none') +
+  scale_y_continuous(labels = function(x) paste0(x, '%')) +
+  scale_x_date(date_breaks = '6 months', date_labels = '%b/%y') +
+  facet_wrap(~ block, scales = 'free_y') +
+  labs(
+    title = 'Perfumes prices (colors) and CPI for Perfumes (black)',
+    x = '',
+    y = '%MoM',
+    color = ''
+  )
+```
+
+Online prices tend to change more frequently than those in brick-and-mortar stores, often featuring promotions exclusive to online purchases. As a result, perfume prices fluctuate dramatically -- ranging from --40% to 80% -- making even the notoriously volatile Consumer Price Index (CPI) for perfumes appear stable by comparison. To enhance stability and facilitate comparison, I scaled perfume prices to match the CPI's mean and standard deviation.
+
+```{r}
+perfume_prices_cpi_br_scaled <- perfume_prices_cpi_br |> 
+  mutate(
+    across(
+      starts_with('product'),
+      ~ (scale(.x)[, 1] * sd(cpi_perfume)) + mean(cpi_perfume)
+    )
+  )
+```
+
+```{r}
+#| echo: false
+set.seed(1)
+perfume_prices_cpi_br_scaled |> 
+  pivot_longer(
+    cols = starts_with('product'), 
+    names_to = 'var',
+    values_to = 'value'
+  ) |> 
+  group_by(var) |> 
+  mutate(
+    block = paste0('Set of products #', sample(1:4, 1))
+  ) |> 
+  ungroup() |> 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = value, color = var), lwd = 1) +
+  geom_line(aes(y = cpi_perfume), color = 'black', lwd = 1) +
+  guides(color = 'none') +
+  scale_y_continuous(labels = function(x) paste0(x, '%')) +
+  scale_x_date(date_breaks = '6 months', date_labels = '%b/%y') +
+  facet_wrap(~ block, scales = 'free_y') +
+  labs(
+    title = 'Perfumes prices - scaled (colors) and CPI for Perfumes (black)',
+    x = '',
+    y = '%MoM',
+    color = ''
+  )
+```
+
+We can now see that several time series closely follow the target. Our main goal is to identify the most appropriate ones, assign proper weights, and construct a reliable predictor for the target series.
+
+## PCA
+
+To summarize a large data set into a few key factors, Principal Components Analysis (PCA) is often the go-to tool. Essentially, PCA leverages the eigenvalues and eigenvectors of the covariance matrix to extract factors that explain the variability in the data. Its main advantages are its simplicity and low computational cost, which make it both easy to implement and fast to compute.
+
+However, PCA has its limitations. It is not ideally suited for time series data, as it does not account for autocorrelation. In such cases, the Dynamic Factor Model (DFM), discussed in Chapter 14, provides a more appropriate alternative. Additionally, PCA is an unsupervised method, meaning it does not consider the target variable when computing factors. As a result, the computed factors may or may not be relevant to the target variable -- something we can explore later using a regression model. This will become clearer soon.
+
+The first step is to convert the data into a matrix. Next, we call the `prcomp` function from the `stats` package. Note that we have chosen not to center or scale the data, as these preprocessing steps were already applied earlier.
+
+```{r}
+perfume_prices_matrix <- perfume_prices_cpi_br |> 
+  arrange(date) |> 
+  select(starts_with('product')) |> 
+  as.matrix()
+
+perfume_prices_pca <- stats::prcomp(
+  perfume_prices_matrix, 
+  center = FALSE, 
+  scale. = FALSE
+)
+
+summary(perfume_prices_pca)
+
+```
+
+The `summary` function returns statistics about the principal components, with the most important metric being the proportion of variance explained by each component. Ideally, we would like the data's variability to be captured by only a few factors, with minimal additional gains from including more components. However, this is not always the case. For example, in the output above, the first component accounts for only 15% of the variability, and it takes the first five components together to explain 50% of the total variability. This clearly indicates how divergent our data set is.
+
+Now, let's select the first four components and assess whether any of them can help explain the CPI series. This choice is somewhat arbitrary -- it's possible that the seventh or tenth factor might be relevant to explain the target CPI. Since our factors were derived solely from online prices, there is no guarantee that they are directly related to the CPI. However, we expect that the strongest co-movements among online prices, captured by the first few factors, are driven by the same underlying forces that influence the prices used in the official indicator.
+
+```{r}
+perfume_prices_pca_series <- predict(
+  perfume_prices_pca, 
+  perfume_prices_cpi_br_scaled
+) |> as.data.frame()
+
+perfume_prices_pca_df <- bind_cols(
+  perfume_prices_cpi_br_scaled |> select(date, cpi_perfume),
+  perfume_prices_pca_series[, 1:4]
+)
+
+perfume_prices_pca_df |> 
+  pivot_longer(
+    cols = starts_with('PC'),
+    names_to = 'pc',
+    values_to = 'serie'
+  ) |> 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = cpi_perfume, color = 'CPI'), lwd = 1) +
+  geom_line(aes(y = serie), lwd = 1) +
+  scale_y_continuous(labels = function(x) paste0(x, '%')) +
+  scale_x_date(date_breaks = '6 months', date_labels = '%b/%y') +
+  facet_wrap(~ pc, scales = 'free_y') +
+  labs(
+    title = 'CPI for Perfumes vs. Principal Components',
+    x = '',
+    y = ''
+  )
+
+```
+
+At first glance, the plot might seem a bit confusing, but a closer examination reveals important patterns. For instance, PC1 appears to correlate with the target variable, albeit in the opposite direction, and the same seems to hold for PC3. This is not necessarily a concern, as we are now analyzing factors that summarize variability in the data rather than raw prices. To gain a clearer sense of the correlation, we can invert the factors.
+
+```{r}
+perfume_prices_pca_df |> 
+  pivot_longer(
+    cols = starts_with('PC'),
+    names_to = 'pc',
+    values_to = 'serie'
+  ) |> 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = cpi_perfume, color = 'CPI'), lwd = 1) +
+  geom_line(aes(y = -1 * serie), lwd = 1) +
+  scale_y_continuous(labels = function(x) paste0(x, '%')) +
+  scale_x_date(date_breaks = '6 months', date_labels = '%b/%y') +
+  facet_wrap(~ pc, scales = 'free_y') +
+  labs(
+    title = 'CPI for Perfumes vs. Principal Components (inverted)',
+    x = '',
+    y = ''
+  )
+
+```
+
+Additionally, PC2 -- and especially PC4 -- exhibit a similar pattern of high volatility in the initial part of the sample, followed by lower volatility toward the end. However, PC2 diverges significantly from the target series toward the end of the sample, raising concerns about its alignment with future values. This warrants caution in its interpretation.
+
+In summary, the factors appear to contain valuable information for explaining the target variable. Let's proceed by incorporating them into a regression model.
+
+```{r}
+#| warning: false
+#| message: false
+library(forecast)
+perfume_prices_ols_fit <- lm(cpi_perfume ~ PC1 + PC2 + PC3 + PC4, perfume_prices_pca_df) 
+
+perfume_prices_ols_fit |> summary()
+perfume_prices_ols_fit |> forecast::checkresiduals()
+
+```
+
+The initial results confirm our expectations: PC1 and PC3 both have negative signs, as does PC4. As noted earlier, this is not a cause for concern. PC2, however, is not statistically significant, and its divergence from the target variable toward the end of the sample raises further doubts about its reliability. Given this, it would be safer to exclude it from the model.
+
+Additionally, the residuals exhibit autocorrelation, which suggests that incorporating lags of the target variable may improve the model. Let's update our regression accordingly.
+
+```{r}
+#| warning: false
+#| message: false
+perfume_prices_ols_fit2 <- perfume_prices_ols_fit |> 
+  update(. ~ . - PC2 + lag(cpi_perfume, 1) + lag(cpi_perfume, 2))
+
+perfume_prices_ols_fit2 |> summary()
+perfume_prices_ols_fit2 |> forecast::checkresiduals()
+```
+
+We successfully eliminated autocorrelation in the residuals. While some heteroscedasticity remains, it does not pose significant issues for parameter inference. The plot below illustrates how the model's fitted values align with the target variable.
+
+```{r}
+library(broom)
+perfume_prices_ols_fit2_results <- perfume_prices_ols_fit2 |> 
+  broom::augment() |> 
+  mutate(
+    date = perfume_prices_pca_df$date[as.numeric(.rownames)]
+  ) |> 
+  relocate(date, cpi_perfume, .fitted)
+
+perfume_prices_ols_fit2_results |> 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = cpi_perfume, color = 'CPI'), lwd = 1) + 
+  geom_line(aes(y = .fitted, color = 'fitted'), lwd = 1) +
+  scale_y_continuous(labels = function(x) paste0(x, '%')) +
+  scale_x_date(date_breaks = '6 months', date_labels = '%b/%y') +
+  labs(
+    title = 'CPI for perfumes vs. fitted values - %MoM NSA',
+    x = '',
+    y = '%MoM NSA',
+    color = ''
+  )
+```
+
+The PCA-based approach performed quite well. We started with 33 candidate predictors and distilled them down to just three factors that:
+
+1.  Capture the most relevant information from the data,
+2.  Dramatically reduce the risk of overfitting, and
+3.  Mitigate instability in both model parameters and predicted values by filtering out noise from individual series---a crucial concern when working with data from websites.
+
+## LASSO
+
+The Least Absolute Shrinkage and Selection Operator (LASSO) is a regression method that extends the standard linear regression by introducing an L1 regularization penalty on the coefficients. This penalty shrinks the coefficients, driving some toward zero, effectively performing variable selection. The objective of LASSO is to solve the following problem:
+
+$$
+\hat{\beta}_{LASSO} = \arg\min_{\beta} \left\{ \sum_{i=1}^{n} (y_i - X_i \beta)^2 + \lambda \sum_{j=1}^{p} |\beta_j| \right\}
+$$ where $\lambda$ is the regularization parameter.
+
+This approach differs conceptually from PCA in several ways. First, LASSO aims to retain only the most relevant variables, whereas PCA seeks to summarize the entire information set. Second, LASSO is a supervised method, meaning that predictors are deemed relevant based on their contribution to explaining the target variable.
+
+Additionally, LASSO has remained highly popular among econometricians, even after the widespread adoption of other machine learning techniques that also perform regularization, due to its computational efficiency, simplicity -- it requires tuning only a single parameter, $\lambda$ -- and straightforward interpretability, as it explicitly identifies the relevant variables and their contribution to explain the target.
+
+As an application, let's revisit the task from the previous section: fitting a model for the CPI of perfumes using data on 33 products extracted from websites. We'll use the `glmnet` function from the homonymous package, the most popular R package for fitting LASSO models.
+
+The first step is to prepare the data before passing it to the function. The `glmnet` function requires the predictor data to be in matrix form and the target data to be in vector form.
+
+The second step is to determine the value of the regularization parameter, $\lambda$. The most common approach is to perform a k-fold cross-validation, where the model is fitted on multiple subsets of the sample, and $\lambda$ is selected based on the value that minimizes the prediction error.
+
+The function `cv.glmnet` performs the k-fold cross validation, and contains a `plot` to produce a visual representation of the results.
+
+```{r}
+library(glmnet)
+set.seed(1)
+
+target <- perfume_prices_cpi_br_scaled |> pull(cpi_perfume)
+lambda_cv <- glmnet::cv.glmnet(x = perfume_prices_matrix, y = target)
+
+lambda_cv
+plot(lambda_cv)
+
+```
+
+The red dots are the mean squared error (MSE) obtained from the k-fold cross-validation along the `\lambda` sequence (the x axis). The two vertical dashed lines indicate the value of $\lambda$ that minimizes the MSE and the most regularized model such that the cross-validated error is within one standard error of the minimum, respectively. The top horizontal axis shows the number of predictors for each setting.
+
+The resulting object contains a `coef` method that allows us to examine the selected variables and their coefficients for any $\lambda$ in the sequence. Additionally, it provides text shortcuts for the two values indicated by the vertical dashed lines.
+
+```{r}
+coef(lambda_cv, s = 'lambda.min')
+```
+
+As we observed in the plot, the $\lambda$ that minimizes the MSE yields a large model with 26 variables -- roughly half the sample size. Moreover, many of these variables have negative coefficients, which is unexpected. This suggests that a slightly stronger regularization may be necessary.
+
+At this point, it is worth noting that introducing some discretion into the process is perfectly acceptable if we believe the resulting model should be more or less restrictive. For instance, we can choose $\lambda$ to yield a more persimonious model with six variables. According to the plot, $\lambda \approx 0.5$ should accomplish it.
+
+```{r}
+coef(lambda_cv, s = 0.5)
+```
+
+We now have a parsimonious model with all the coefficients positive. Let's check the fitted values.
+
+```{r}
+perfume_prices_lasso_fit_results <- perfume_prices_cpi_br |> 
+  select(date, cpi_perfume) |> 
+  mutate(
+    .fitted_lasso = predict(lambda_cv$glmnet.fit, newx = perfume_prices_matrix, s = 0.5)
+  )
+
+perfume_prices_lasso_fit_results |> 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = cpi_perfume, color = 'CPI'), lwd = 1) + 
+  geom_line(aes(y = .fitted_lasso, color = 'LASSO'), lwd = 1) +
+  scale_y_continuous(labels = function(x) paste0(x, '%')) +
+  scale_x_date(date_breaks = '6 months', date_labels = '%b/%y') +
+  labs(
+    title = 'CPI for perfumes vs. fitted values - %MoM NSA',
+    x = '',
+    y = '%MoM NSA',
+    color = ''
+  )
+```
+
+The six variables produced a reasonable fit to the data, especially in the most recent period. Recall that in the previous section, when estimating the OLS model, we included two lags of the response variable to account for autocorrelation in the residuals. These lags improved the model's $R^2$ and could also be incorporated into the selection procedure here to enhance performance.
+
+Additionally, we could further analyze the model by adjusting the number of selected variables, either restricting or expanding them. However, the primary goal here was to demonstrate the fundamentals of LASSO estimation. Those interested in more details can find additional resources on the [glmnet official page](https://glmnet.stanford.edu/articles/glmnet.html).
+
+Finally, it is important to note that, as discussed earlier in this chapter, website prices tend to be highly volatile and noisy. While the PCA factors helped mitigate these issues, in the LASSO estimation, we used raw prices as inputs. A more effective approach would be to first apply a smoothing filter to the series before performing the estimation.

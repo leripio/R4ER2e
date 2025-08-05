@@ -1,0 +1,186 @@
+# Seasonal adjustment {#seasonality}
+
+Seasonality is commonly defined as the expected fluctuation in time series data that occurs at a regular frequency not exceeding a one year. For instance, temperatures are higher in the summer months and lower in the winter months. These fluctuations often create difficulties in correctly identifying trends in the data. For example, it's not very helpful to know that the average temperature increased in July compared to June -- the relevant information is how much the average temperature exceeded the historical pattern for this time of year. Therefore, in most time series applications, it's essential to remove the seasonal component before carrying out any further analysis.
+
+Several methods are available for seasonal adjustment, with [X-13-ARIMA](https://www.census.gov/data/software/x13as.html) from the US Census Bureau being the most widely used. Roughly speaking, it uses a standard ARIMA model with external regressors accounting for outliers, permanent or transitory shifts, holidays, and so on. The [Seasonal Adjustment Q&A](https://www.census.gov/data/software/x13as/seasonal-adjustment-questions-answers.html) section of the Census website provides details on how the tool works, as well as useful information on the practice of seasonal adjustment. It's worth giving it a read.
+
+In the following sections, we'll see how to identify and remove the seasonal pattern from Brazilian Retail Sales data (PMC, provided by IBGE, Brazil's official statistics bureau) using X-13-ARIMA.
+
+### Spotting a seasonal pattern
+
+It's very common for time series to exhibit a seasonal pattern strong enough to be identified through simply visual inspection. The data on Brazilian Retail Sales is a good example of this, as we can clearly see regularly spaced peaks throughout the sample.
+
+::: {.callout-tip}
+## Data
+The Brazilian Retail Sales data set from IBGE is available in the `R4ER2data` package under the name `retail_sales_br`.
+:::
+
+```{r}
+#| warning: false
+#| message: false
+retail_sales_br <- R4ER2data::retail_sales_br
+```
+
+```{r}
+#| echo: false
+#| warning: false
+library(tidyverse)
+library(forecast)
+
+retail_ts_nsa <- retail_sales_br |> 
+  dplyr::filter(var == 'retail') |> 
+  dplyr::pull(value) |> 
+  ts(start = c(2000,1), frequency = 12)
+
+retail_ts_nsa |> 
+  autoplot() +
+  labs(
+    title = 'Retail sales in Brazil - Volume Index (2014 = 100)',
+    x = '',
+    y = 'Index (2014 = 100)'
+  )
+```
+
+Sometimes, however, the combination of trends and random noise may hinder our ability to spot the seasonal pattern. In such cases, we can resort to specific tools. For example, the `ggmonthplot` function from the `forecast` package is a handy shortcut for building a plot where the data are grouped by period, allowing us to see whether the values deviate significantly from the historical pattern typically observed in that period. 
+
+```{r}
+retail_ts_nsa |>
+  ggmonthplot() +
+  labs(
+    title = 'Retail sales in Brazil - Volume Index (2014 = 100)',
+    x = '',
+    y = 'Index (2014 = 100)'
+  )
+```
+
+As the graph makes clear, we can expect values in December to be, on average, higher than in any other month. This is obviously related to year-end sales, as you might suspect.
+
+### Removing the seasonal pattern
+
+X-13-ARIMA is available to R users through the `seasonal` package. To keep things as simple as possible, the `seas` function can automatically select the model that best fits the data. This means we can perform seasonal adjustment without requiring any specific knowledge. Note that the `seas` function returns the model selected for seasonal adjustment -- not the seasonally adjusted values, which are obtained by calling the `final` function on the resulting object. 
+
+```{r}
+#| warning: false
+library(seasonal)
+retail_sa_autox13 <- seas(retail_ts_nsa)
+retail_sa_autox13 |> 
+  final() |> 
+  autoplot() +
+  autolayer(retail_ts_nsa, series = 'Retail NSA') +
+  labs(
+    title = 'Retail sales in Brazil - Volume Index (2014 = 100)',
+    subtitle = 'Seasonally-Adjusted',
+    x = '',
+    y = 'Index (2014 = 100)'
+  )
+```
+
+It did a good job of getting rid of those December peaks -- and possibly other undesirable hidden patterns. We can use the `ggmonthplot` function we saw in the previous section to check that there's no seasonality left in the data.
+
+```{r}
+retail_sa_autox13 |>
+  final() |> 
+  ggmonthplot() +
+  labs(
+    title = 'Retail sales in Brazil - Volume Index (2014 = 100)',
+    subtitle = 'Seasonally-Adjusted',
+    x = '',
+    y = 'Index (2014 = 100)'
+  )
+```
+
+It looks pretty good! Remember that no seasonal adjustment is perfect -- the goal is always to have no apparent seasonality in the data. In this case, we could safely make meaningful comparisons between periods. 
+
+To conclude, it's worth mentioning that we can access relevant information about the selected model using standard methods for `lm` objects. For example, information on the estimated parameters is available through the `summary` function, while the `checkresiduals` function from the `forecast` package can be used to assess the properties of the residuals -- or you can perform any residual-based test directly using the `residuals` function.
+
+```{r}
+#| results:  false
+#| warning: false
+#| output: false
+retail_sa_autox13 |> 
+  summary()
+retail_sa_autox13 |> 
+  forecast::checkresiduals()
+```
+
+### Moving to a custom specification
+
+Sometimes we simply can't rely on automatic model selection -- either because we want to incorporate additional features (special moving holidays is a common issue), or because we need to replicate the seasonal adjustment provided by the source or by a third party.
+
+For instance, IBGE releases its own seasonally adjusted retail sales data. So, if we were to analyze or forecast seasonally adjusted data using IBGE's releases as our target, we would necessarily have to adopt its specification. Let's first compare the automatic seasonal adjustment we computed in the previous section with the official seasonally adjusted series provided by IBGE.
+
+```{r}
+retail_sa_ibge <- 
+  retail_sales_br |> 
+  dplyr::filter(var == 'retail_sa') |> 
+  dplyr::pull(value) |> 
+  ts(start = c(2000,1), frequency = 12)
+retail_sa_autox13 |> 
+  final() |> 
+  autoplot() +
+  autolayer(retail_sa_ibge, series = 'Retail Sales SA (official)') +
+  labs(
+    title = 'Retail sales in Brazil - Volume Index (2014 = 100)',
+    subtitle = 'Seasonally-Adjusted',
+    x = '',
+    y = 'Index (2014 = 100)'
+  )
+```
+
+We can see that for most of the sample, the automatic seasonal adjustment closely follows the official series, but it clearly goes off track right after the COVID shock in the early 2000s. Fortunately, IBGE describes the model specification it uses for the seasonal adjustment of this series in a technical note. Some relevant details include:
+
+1.  The model specification is SARIMA(0,1,1)(0,1,1);
+2.  It incorporates Carnival and Corpus Christi -- two important moving holidays in Brazil -- into the model, along with the usual trading days and Easter; and
+3.  It also includes two level shifts -- April 2020 and December 2020 -- and a temporary change in April 2020, all arguably to account for the effects of the COVID shock.
+
+How can we add these features to our seasonal adjustment model? Starting with the moving holidays, we need to create a vector with the dates of the holidays. However, for some holidays, their effect may well extend beyond the day on which they occur. Carnival in Brazil is a good example. Even though the holiday takes place on a Tuesday, the celebration starts on Monday and ends on Wednesday. Hence, it's important to include these two extra days in the input vector.
+
+The `genhol` function makes this task much simpler, as it automatically extends the date vector by including a number of earlier and/or later dates defined by the offsetting parameters `start` and `end`. Since Carnival occurs 47 days before Easter and Corpus Christi 60 days after Easter, we can build the associated vectors based on the latter -- the `seasonal` package includes built-in Easter dates in the `easter` vector. Otherwise, we would have to construct them by ourselves (or import them from another source).
+
+Level shifts and temporary changes can be easily incorporated using textual shortcuts in the `regression.variables` parameter. For level shifts, we use **lsYEAR.MONTH**, and for temporary changes, we use **tcYEAR.MONTH**. More information on these parameters can be found in the [X-13-ARIMA Reference Manual](https://www2.census.gov/software/x-13arima-seats/x-13-data/documentation/docx13as.pdf).
+
+Below, we present the full specification of the custom model intended to replicate IBGE's, along with the resulting plot.
+
+```{r}
+#| warning: false
+library(lubridate)
+carnival         <- easter %m-% days(47)
+corpus_christi   <- easter %m+% days(60)
+carnival_holiday <- seasonal::genhol(
+  carnival, 
+  start = -1, 
+  end = 1, 
+  frequency = 12, 
+  center = 'calendar'
+)
+corpus_christi_holiday <- seasonal::genhol(
+  corpus_christi,
+  frequency = 12, 
+  center = 'calendar'
+)
+retail_sa_customx13 <- seas(
+  x = retail_ts_nsa,
+  regression.variables = c(
+    "td", "easter[1]", "ls2020.apr", "tc2020.apr", "ls2020.dec"
+  ),
+  xreg = ts.union(carnival_holiday, corpus_christi_holiday), 
+  regression.usertype = "holiday",
+  arima.model = "(0 1 1)(0 1 1)", 
+  regression.aictest = NULL,
+  outlier = NULL, 
+  transform.function = "log", 
+  x11 = ""
+)
+retail_sa_customx13 |> 
+  final() |> 
+  autoplot() +
+  autolayer(retail_sa_ibge, series = 'Retail SA (official)') +
+  labs(
+    title = 'Retail sales in Brazil - Volume Index (2014 = 100)',
+    subtitle = 'Seasonally adjusted',
+    x = '',
+    y = 'Index (2014 = 100)'
+  )
+```
+
+The new specification produced an almost perfect match with the official seasonally adjusted data, especially for the post-COVID period. Some deviations are arguably due to slight differences in the holiday vector, but for now, we'll consider the goal achieved.

@@ -1,0 +1,210 @@
+# Mixed frequency models
+
+When modeling the relationship between economic variables in the previous chapters, we assumed that all variables were observed at the same frequency. For instance, the Phillips Curve estimated in Chapter 10 relied exclusively on quarterly data. However, there are situations in which we may want to include meaningful predictors that are available at a different frequency than the target variable. What should we do in such cases?
+
+The simplest approach is to aggregate high-frequency variables to match the frequency of the target variable. For example, quarterly GDP can be modeled as a function of the three-month average of monthly industrial production. This method presents no major issues when the main objective is to understand the relationship between variables. However, it is quite limited for forecasting (or nowcasting), as it prevents us from fully exploiting all the available data to generate timely predictions.
+
+For example, suppose we are in May 2024 and have GDP data available up to the first quarter. If the Industrial Production index for April is released, we may want to incorporate this new information into the prediction for second-quarter GDP. However, the aggregation approach cannot handle this directly, as it requires complete data for the entire period being modeled. This situation illustrates the so-called *ragged edge* problem -- where some variables are more up-to-date than others.
+
+It is important to acknowledge that, in the absence of observed values for Industrial Production in May and June, any method we employ will inevitably rely on assumptions to account for the missing data. Nonetheless, some alternatives are --- at least conceptually --- better suited to this challenge. The Dynamic Factor Model introduced in Chapter 14, for instance, can be adapted to handle mixed-frequency data and has become a workhorse in the nowcasting literature.
+
+This can be achieved by representing the low-frequency target variable as a function of (latent) high-frequency variables. For instance, since Industrial Production -- the high-frequency variable in the model -- is observed monthly, we should represent quarterly GDP as a combination of monthly variables, or monthly GDP, which can be directly related to monthly Industrial Production. As these monthly GDP values are not observed, they are treated as latent variables in the terminology of state-space models.
+
+## From quarterly GDP to monthly GDP
+
+In some cases, expressing the low-frequency variable as a function of high-frequency variables is straightforward -- for example, when the quarterly value corresponds directly to the three-month average of the monthly variable.
+
+Things get more complex if the relationship between the low-frequency and high-frequency variables is non-linear. For example, when nowcasting GDP, we are often interested in predicting the percentage change in GDP relative to the previous quarter, defined as $\Delta Y_t = ln Y_t - lnY_{t-3}$. Linking this quarterly variation to monthly GDP changes requires some algebra, as shown in @marianoyasutomo2002. This leads to the following expression:
+
+$$ \Delta Y_t = \frac{1}{3} \Delta y_t + \frac{2}{3} \Delta y_{t-1} + \Delta y_{t-2} + \frac{2}{3} \Delta y_{t-3} + \frac{1}{3} \Delta y_{t-4} $$ 
+
+where $y$ is the monthly GDP.
+
+In words, the percentage change in GDP relative to the previous quarter --- our observed target variable --- can be expressed as a weighted sum of the current and four lagged values of unobserved monthly GDP growth rates. These latent variables can, in turn, be linked to the monthly growth rate of Industrial Production, allowing our GDP growth forecasts to respond dynamically to new releases of Industrial Production data.
+
+## Nowcasting GDP
+
+Once we have successfully derived the expression that links the low-frequency target variable to the high-frequency predictors, the next step is to formulate the state-space representation of the model, as discussed in Chapter 12.
+
+$$
+\begin{bmatrix}
+\Delta Y_t \\ \Delta IP_t
+\end{bmatrix} = 
+\begin{bmatrix}
+\frac{1}{3} & \frac{2}{3} & 1 & \frac{2}{3} & \frac{1}{3} \\
+\beta & 0 & 0 & 0 & 0
+\end{bmatrix}
+\begin{bmatrix}
+\Delta y_t \\ \Delta y_{t-1} \\ \Delta y_{t-2} \\ \Delta y_{t-3} \\ \Delta y_{t-4}
+\end{bmatrix} +
+v_t \sim N(0, R)
+$$ $$
+R = \begin{bmatrix}
+0 & 0 \\
+0 & \sigma_{\text{ IP}}
+\end{bmatrix}
+$$
+
+$$
+\begin{bmatrix}
+\Delta y_t \\ \Delta y_{t-1} \\ \Delta y_{t-2} \\ \Delta y_{t-3} \\ \Delta y_{t-4}
+\end{bmatrix} = 
+\begin{bmatrix}
+1 & 0 & 0 & 0 & 0 \\ 1 & 0 & 0 & 0 & 0 \\ 0 & 1 & 0 & 0 & 0 \\ 0 & 0 & 1 & 0 & 0 \\ 0 & 0 & 0 & 1 & 0
+\end{bmatrix}
+\begin{bmatrix}
+\Delta y_{t-1} \\ \Delta y_{t-2} \\ \Delta y_{t-3} \\ \Delta y_{t-4} \\ \Delta y_{t-5}
+\end{bmatrix}
++ 
+w_t \sim N(0, Q)
+$$ 
+
+$$ 
+Q = \begin{bmatrix}
+\sigma_{y} & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & 0 \\
+\end{bmatrix}
+$$
+
+We are now ready to fit the model to the data. For this exercise, we will use the `gdp_ip_br` dataset, which contains seasonally adjusted data on Brazil's quarterly GDP and monthly Industrial Production. I recommend that readers start by inspecting the variables to get a better sense of their main features and behavior over time.
+
+::: {.callout-tip}
+## Data
+The data set containing the variables for this exercise is available in the `R4ER2data` package under the name `gdp_ip_br`.
+:::
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(R4ER2data)
+
+gdp_ip_br <- R4ER2data::gdp_ip_br
+```
+
+After becoming familiar with the data, we will create the variables of interest --- the quarterly growth rate of GDP and the monthly growth rate of Industrial Production --- and then organize the dataset in matrix format, as required by the `MARSS` function.
+
+Note that we have data on GDP up to the third quarter of 2024 and Industrial Production up to November. To generate a forecast for fourth-quarter GDP, we need `NA` values in the GDP column up to December. This process can be generalized by extending the dataset to include the remaining months up to the end of the next quarter.
+
+```{r}
+#| warning: false
+#| message: false
+model_data <- gdp_ip_br |> 
+  dplyr::arrange(date) |> 
+  dplyr::filter(date >= '2001-12-01') |> 
+  dplyr::mutate(
+    delta_gdp = 100 * log(gdp_br_sa/dplyr::lag(gdp_br_sa, 3)),
+    delta_ip  = 100 * log(ip_br_sa/dplyr::lag(ip_br_sa, 1))
+  ) |> 
+  dplyr::filter(date >= '2002-02-01') |> 
+  dplyr::arrange(date) |> 
+  dplyr::bind_rows(
+    tibble(
+      date = as.Date('2024-12-01')
+    )
+  )
+
+model_data_marss <- model_data |> 
+  dplyr::select(delta_gdp, delta_ip) |> 
+  ts(start = c(2002,2), freq = 12) |> 
+  as.matrix() |> 
+  t()
+```
+
+Below, we define the model specification as required by the `MARSS` package, following the same structure used in previous chapters.
+
+```{r}
+model_spec   <- list()
+model_spec$B <- matrix(
+  list(
+    1, 0, 0, 0, 0, 
+    1, 0, 0, 0, 0, 
+    0, 1, 0, 0, 0, 
+    0, 0, 1, 0, 0,
+    0, 0, 0, 1, 0
+  ), 
+  ncol = 5, nrow = 5, byrow = TRUE
+)
+
+model_spec$Z <- matrix(
+  list(
+    1/3, 2/3, 1, 2/3, 1/3,
+    'beta', 0, 0, 0, 0
+  ), 
+  nrow = 2, ncol = 5, byrow = TRUE
+)
+
+model_spec$A <- matrix(
+  list(
+    0, 'alpha'
+  ),
+  nrow = 2, ncol = 1
+)
+
+model_spec$U <- 'zero'
+
+model_spec$Q <- matrix(
+  list(
+    'sigma2', 0, 0, 0, 0,
+    0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0
+  ),
+  nrow = 5, ncol = 5
+)
+
+model_spec$R <- matrix(
+  list(
+    0, 0,
+    0, 'sigma1'
+  ),
+  ncol = 2, nrow = 2
+)
+
+model_spec$x0 <- matrix(0,5,1)
+model_spec$V0 <- diag(1,5)
+model_spec$tinitx <- 0
+```
+
+Finally, we fit the model to the data.
+
+```{r}
+library(MARSS)
+model_fit <- MARSS(
+  y = model_data_marss, 
+  model  = model_spec, 
+  inits  = list(x0 = 0),
+  silent = TRUE
+)
+```
+
+For the purpose of this exercise, the output of interest -- the prediction for 2024Q4 GDP -- is stored in the `ytT` element of the `model_fit` object. It corresponds to the expected value of $Y$ conditional on all available data (i.e., incorporating the observed values for Industrial Production in October and November).[^mixed_frequency-1]
+
+[^mixed_frequency-1]: We can obtain the marginal contribution of each Industrial Production data release by plugging the filtered values for the latent variables into the expression for $\Delta Y_t$.
+
+```{r}
+gdp_pred <- model_data |>
+  dplyr::mutate(
+    gdp_pred = model_fit$ytT[1, ],
+    type = ifelse(is.na(delta_gdp), 'Estimated', 'Observed')
+  ) |> 
+  dplyr::filter(month(date) %in% c(3,6,9,12)) |> 
+  dplyr::select(date, gdp_pred, type)
+
+gdp_pred |> 
+  ggplot(aes(x = date, y = gdp_pred, color = type)) +
+  geom_line() +
+  geom_point() +
+  theme(
+    legend.position = 'top'
+  ) +
+  labs(
+    title = 'GDP Nowcast',
+    x = '',
+    y = ''
+  )
+```

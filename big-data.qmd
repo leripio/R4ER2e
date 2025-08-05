@@ -1,0 +1,103 @@
+# Working with big data
+
+Until recently, working with big data offered two main alternatives: relying on your IT team to set up an appropriate database or attempting to fit massive files into your computer's memory. For those working independently, the first option might be impractical, while the second is bound to reach its limits quite rapidly.
+
+In the introductory chapter (see #tidyverse), we explored how to import data from APIs. This method proves highly useful, as it allows us to filter the data we need directly at the source. However, certain limitations remain. For instance, we can only filter data based on the parameters provided by the API --- which are often limited. An even greater challenge arises when an API is simply unavailable, leaving us with nothing but a large CSV file. So, how can we proceed?
+
+I attended the Posit Conference in 2024 and, among very fascinating talks, one stood out: Hannes Mühleisen, CEO and Co-Founder of [DuckDB](https://duckdb.org) ([video here](https://youtu.be/GELhdezYmP0?si=VQ0sFwlEb6VkZZkm)). I'm not a data engineer, so I won't dive too deeply into how DuckDB works behind the scenes. As a data scientist, I'm more interested in exploring how I can benefit from it.
+
+In a nutshell, DuckDB seamlessly converts your flat file into a database, enabling you to fetch data using SQL queries. Describing it this simply, however, might understate the power of this tool. Three aspects are particularly noteworthy in this process. First, it handles column classes and all the tedious details that often arise when writing raw data to a database with remarkable ease. Second, it's incredibly fast at creating tables and executing queries. Third, it supports a wide range of popular file formats -- including CSV, Parquet, and others -- and is fully multi-platform.
+
+So, let's see how it works in practice. For this exercise, we will use the Current Population Survey (CPS) data from the U.S. Census Bureau. This survey collects labor force characteristics and a variety of demographic information from approximately 60,000 U.S. households on a monthly basis. It is widely used to produce labor market indicators and support academic research.
+
+You can download separate CSV files for each month from the U.S. Census Bureau's [website](https://www.census.gov/programs-surveys/cps.html). The entire dataset, starting from 1994, totals 64GB, making it an ideal use case for this chapter, as it would not fit into the memory of most personal computers at the time this book is being written --- including mine, a MacBook Air M2 with 8GB of RAM.
+
+Let's begin by downloading the monthly CSV files. The URL for January 2024 is: https://www2.census.gov/programs-surveys/cps/datasets/**2024**/basic/**jan24**pub.csv. The other files follow this same pattern, making it easy to automate the task.
+
+The code snippet below downloads the monthly data for 2023 and 2024. For our purposes here, this subset should be sufficient, but you are free to adjust the parameters to retrieve a larger sample if needed.
+
+```{r}
+#| warning: false
+library(tidyverse)
+library(glue)
+
+years      <- 2023:2024
+months_abb <- str_to_lower(month.abb)
+
+cps_params <- expand.grid(
+  'year' = years, 
+  'month_abb' = months_abb
+)
+
+cps_params <- cps_params |> 
+  mutate(year_abb = str_sub(year, start = -2, end = -1)) |> 
+  arrange(year, month_abb)
+```
+
+```{r}
+#| eval: false
+pwalk(
+  .l = cps_params,
+  .f = function(year, month_abb, year_abb){
+    try(
+      download.file(
+        glue(
+          'https://www2.census.gov/programs-surveys/cps/datasets/{year}/basic/{month_abb}{year_abb}pub.csv'
+        ),
+        destfile = glue('data/cps/{month_abb}{year_abb}.csv') 
+      )
+    )
+  }
+)
+```
+
+After downloading the CSV files, it's time to write them into a DuckDB table. The first step is to install the `duckdb` package.
+
+```{r}
+#| eval: false
+install.packages("duckdb")
+```
+
+Next, we must create a connection object that represents the database. It can be either a local file (stored on disk) or an in-memory database. I usually opt for the local file, as it allows me to reuse it across different projects.
+
+```{r}
+#| warning: false
+library(duckdb)
+con <- dbConnect(duckdb(), dbdir = "data/cps/cps-data.duckdb")
+```
+
+Finally, we load the individual CSV files into the table. The following statement creates a table named `cps` from all the CSV files in the `data/cps` folder. The `union_by_name` argument ensures that the data are combined based on column names rather than their position (the default behavior). Additionally, it allows columns that are missing in some files to be included in the table with `NULL` values for the missing entries. Without this argument, an error would occur if columns are inconsistent across files.
+
+```{r}
+#| eval: false
+dbExecute(con, "CREATE TABLE cps AS SELECT * FROM read_csv('data/cps/*.csv', union_by_name = true, null_padding = true);")
+```
+
+::: callout-note
+Although DuckDB is designed to handle most common issues with flat files, you may encounter situations where additional arguments are required to work with your specific datasets. If you experience any difficulties loading your files into a table, be sure to consult the [documentation](https://duckdb.org/docs/data/csv/overview) for guidance.
+:::
+
+Now, we can start querying our table. For instance, suppose we want to retrieve data only for April 2023 and April 2024. This can be achieved using a simple `SELECT` statement:
+
+```{r}
+cps_april <- dbGetQuery(
+  con,
+  "SELECT * FROM cps WHERE HRYEAR4 IN (2023,2024) AND HRMONTH = 4"
+)
+```
+
+Sometimes, SQL queries become large and complex. Fortunately, DuckDB integrates seamlessly with `dplyr` via the `dbplyr` package, allowing you to write queries in a more concise and readable way. For instance, the SQL query above can be rewritten as a `dplyr` statement:
+
+```{r}
+cps_table <- tbl(con, "cps")
+cps_april_dplyr <- cps_table |> 
+  dplyr::filter(
+    HRYEAR4 %in% c(2023,2024),
+    HRMONTH == 4
+  ) |> 
+  collect()
+
+dbDisconnect(con)
+```
+
+Note that it is not necessary to explicitly load the `dbplyr` package, as `dplyr` automatically loads it for you. Additionally, all `dplyr` operations are evaluated lazily, meaning the query is only sent to the database when you request the data with the `collect` function.

@@ -1,0 +1,11 @@
+.Rproj.user
+data/
+/.quarto/
+*_cache
+*_files
+.Rhistory
+_book/
+renv/
+site_libs/
+.Rprofile
+/*.html

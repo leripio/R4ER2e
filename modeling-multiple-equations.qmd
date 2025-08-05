@@ -1,0 +1,188 @@
+# Multiple-Equations Model
+
+In the previous section, we saw how to estimate single-equation models to analyze the effect of exogenous variables on an outcome. However, economic relationships are often assessed by a system of endogenous variables. This kind of framework allows us to analyze how each variable affects the entire system -- including the resulting feedback effects.
+
+For example, interest rate hikes are expected to reduce inflation through their contractionary effect on economic activity. In addition, a more restrictive monetary policy stance should lead to an appreciation of the exchange rate due to greater capital inflows -- especially in emerging markets.
+
+In the Phillips Curve we examined in the previous section, all these mechanisms were present, but only implicit. We can make all these relationships explicit by specifying separate equations for exchange rate, capital inflows, or any other relevant variable. In short, working with systems of endogenous equations greatly expands the analytical scope by allowing the incorporation of any theoretically or empirically grounded relationship.
+
+While doing this manually can be cumbersome, the `bimets` package offers a concise and user-friendly interface for specifying entire systems of equations, estimating its parameters, and forecasting under scenarios for the exogenous variables. For those interested in exploring the full set of features, the package's [vignette](https://cran.r-project.org/web/packages/bimets/vignettes/bimets.pdf) provides a comprehensive guide.
+
+For the purposes of this section, we illustrate a simplified version of the standard three-equation macroeconomic model, composed of an IS curve, a Phillips Curve, and a monetary policy rule. The model is specified as follows:
+
+The **IS curve** relates the output gap to its own lag, the deviation of the real ex-ante interest rate from its equilibrium level, and the deviation of the terms of trade from its trend:
+
+$$ \tilde{y_t} = \beta_1\tilde{y}_{t-1} + \beta_2(i_t - \pi^{e}_{t,t+4|t} - i^{eq}_t)_{t-3} + \beta_3\tilde{ToT}_t + \epsilon^{\tilde{y}}_t $$
+
+The **Phillips Curve**, as discussed in the previous section, relates core CPI inflation to its own lag, expected inflation over the next twelve months, the percentage change in imported prices, and the lagged output gap:
+
+$$ \pi_t = \beta_4\pi_{t-1} + \beta_5\pi^{e}_{t,t+4|t} + (1-\beta_4 - \beta_5)\Delta e_{t-1} + \beta_7\tilde{y}_{t-1} + \epsilon_t^{\pi} $$
+
+Finally, the **monetary policy rule** links the nominal interest rate to its own lags, the deviation of expected inflation from the target, and the nominal equilibrium interest rate.
+
+$$ i_t = \beta_8i_{t-1} + \beta_9i_{t-2} + (1-\beta_8-\beta_9)(\pi^{e}_{t,t+4|t} - \bar{\pi_t}) + \beta_{11}(i_t^{eq} + \bar{\pi}_t) + \epsilon_t^{i} $$
+
+The first step is to write down the system of equations following the standard format required by the package. A careful look at the equations blocks below should be enough to understand how this structure works.
+
+```{r}
+#| warning: false
+#| message: false
+model_spec <- "
+MODEL
+
+COMMENT> IS Curve
+BEHAVIORAL> YGAP
+TSRANGE 2005 1 2022 4
+EQ> YGAP = b1*TSLAG(YGAP,1) + b2*TSLAG((MPR- CPI_EXP - IR_EQ),1) + b3*TOT_GAP
+COEFF> b1 b2 b3
+
+COMMENT> Phillips Curve
+BEHAVIORAL> CPI_CORE
+TSRANGE 2005 1 2022 4
+EQ> CPI_CORE = b4*TSLAG(CPI_CORE,1) + b5*CPI_EXP + b6*(TSDELTALOG(CI_USD)) + b7*TSLAG(YGAP,1)
+COEFF> b4 b5 b6 b7
+RESTRICT> b4+b5+b6=1
+
+COMMENT> Monetary Policy Rule
+BEHAVIORAL> MPR
+TSRANGE 2005 1 2022 4
+EQ> MPR = b8*TSLAG(MPR,1) + b9*TSLAG(MPR,2) + b10*(CPI_EXP - CPI_TARGET_ADJ) + b11*(IR_EQ + CPI_TARGET_ADJ)
+COEFF> b8 b9 b10 b11
+RESTRICT> b8+b9+b10=1
+
+END
+"
+```
+
+The next step is to load both the model specification and the data. The data must be provided as a list of time series objects (`ts`).
+
+::: callout-tip
+## Data
+
+The data set containing the variables for this exercise is available in the `R4ER2data` package under the name `br_economy_model`.
+:::
+
+```{r}
+#| warning: false
+#| message: false
+library(tidyverse)
+library(bimets)
+library(plyr)
+br_economy_data <- R4ER2data::br_economy_model
+macro_model     <- LOAD_MODEL(modelText = model_spec)
+model_data_ts   <- br_economy_data |> 
+  pivot_longer(-date, names_to = 'var', values_to = 'value') |> 
+  plyr::dlply(
+    .variables = 'var', 
+    .fun = function(x){
+      TIMESERIES(x$value, START = c(2004,1), FREQ = 4)
+    }
+  )
+macro_model <- LOAD_MODEL_DATA(
+  macro_model, 
+  model_data_ts
+)
+```
+
+At this point, we're ready to estimate the model coefficients. By default, the equations are estimated using Ordinary Least Squares (OLS), but it's also possible to use Instrumental Variables (IV) if needed. I used `quietly = TRUE` to suppress the printed output, as it tends to be quite lengthy. However, I recommend taking a look at the output by either setting this argument to `FALSE` or simply removing it.
+
+```{r}
+#| warning: false
+#| message: false
+model_fit <- ESTIMATE(
+  macro_model, 
+  estTech = 'OLS',
+  quietly = TRUE
+)
+```
+
+Finally, we can use our estimated model to generate forecasts for future values. To do this, we first need to supply future values for the exogenous variables. The `TSEXTEND` function simplifies this task by offering several methods to extend the time series of these variables. In the example below, I apply different assumptions to illustrate some of the available options.
+
+Specifically, I assume that both the CPI target and the equilibrium real interest rate will remain constant; CPI expectations will follow a linear trend; the terms-of-trade gap will decline by 2.4% each quarter, reflecting the average change over the past four quarters; and imported prices will fall by 2% each quarter, partially reversing the surge observed in recent years.
+
+```{r}
+#| warning: false
+#| message: false
+model_fit$modelData <-  within(
+  model_fit$modelData, {
+    CPI_TARGET_ADJ = TSEXTEND(CPI_TARGET_ADJ, UPTO=c(2026,1),EXTMODE='CONSTANT')
+    CPI_EXP        = TSEXTEND(CPI_EXP,        UPTO=c(2026,1),EXTMODE='LINEAR')
+    CI_USD         = TSEXTEND(CI_USD,         UPTO=c(2026,1),EXTMODE='MYRATE', FACTOR = (1-0.02))
+    IR_EQ          = TSEXTEND(IR_EQ,          UPTO=c(2026,1),EXTMODE='CONSTANT')
+    TOT_GAP        = TSEXTEND(TOT_GAP,        UPTO=c(2026,1),EXTMODE='MYCONST', FACTOR = -2.4)
+  }
+)
+```
+
+We can convert this object into a tidy format to facilitate plotting all the extended time series in a single panel.
+
+```{r}
+#| warning: false
+#| message: false
+#| code-fold: true
+#| code-summary: 'Show the code'
+
+do.call(ts.union, model_fit$modelData) |>
+  timetk::tk_tbl() |> 
+  pivot_longer(-index, names_to = 'var', values_to = 'value') |> 
+  filter(!var %in% c('CPI_CORE', 'YGAP', 'MPR')) |>
+  mutate(scenario = if_else(index >= '2023 Q1', 'Y', 'N')) |> 
+  ggplot(aes(x = index, y = value, color = scenario)) +
+  geom_line(lwd = 1) +
+  scale_color_manual(values = c('black', 'red')) +
+  facet_wrap(~ var, scales = 'free_y') +
+  theme(legend.position = 'top') +
+  zoo::scale_x_yearqtr(n = 5, format = '%Y') +
+  labs(
+    title = 'Scenarios for exogenous variables',
+    x = '',
+    y = ''
+  )
+```
+
+In the final step, we call the `SIMULATE` function. Once again, with just a few lines of code, we can transform the output into a tidy format to create a cleaner and more informative plot.
+
+```{r}
+#| warning: false
+#| message: false
+model_sim <- SIMULATE(
+  model_fit,
+  simType        = 'FORECAST',
+  TSRANGE        = c(2023,1,2025,1),
+  simConvergence = 0.00001,
+  simIterLimit   = 100,
+  quietly        = TRUE
+)
+```
+
+```{r}
+#| warning: false
+#| message: false
+#| code-fold: true
+#| code-summary: 'Show the code'
+output <- do.call(ts.intersect, model_fit$modelData) |> 
+  timetk::tk_tbl(rename_index = 'date') |> 
+  mutate(type = 'Observed') |> 
+  bind_rows(
+    do.call(ts.intersect, model_sim$simulation[1:3]) |> 
+      timetk::tk_tbl(rename_index = 'date') |> 
+      mutate(type = 'Forecast')
+  ) |> 
+  mutate(date = zoo::as.yearqtr(date))
+output |> 
+  select(date, YGAP, CPI_CORE, MPR, type) |> 
+  pivot_longer(-c(date, type), names_to = 'var', values_to = 'value') |> 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = value, color = type, linetype = type)) +
+  scale_linetype_manual(values = c(2,1)) +
+  zoo::scale_x_yearqtr(n = 10, format = '%YQ%q') +
+  facet_wrap(~ var, scales = 'free_y', nrow = 3) +
+  theme(legend.position = 'top') +
+  labs(
+    title = 'Forecasts for economic variables',
+    x = '',
+    y = '',
+    linetype = '',
+    color = ''
+  )
+```

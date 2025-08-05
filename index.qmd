@@ -1,0 +1,88 @@
+# Preface to the Second Edition {.unnumbered}
+
+Two years have passed since the first edition of *R for Economic Research*, and I'm grateful for how far things have come. During this time, the book has received over 40,000 views, and I've received many kind messages from people who have benefited from it in their work. Moreover, people I deeply admire have taken notice of the book -- for example, Rami Krispin featured it in his weekly newsletter on LinkedIn. All of this has meant a lot to me and motivated me to take the project further.
+
+I shall confess that several times after releasing the first edition, I thought a new project using the R language would be very unlikely -- because R might become obsolete, or close to it. Indeed, at the Posit Conference in 2024, I asked Hadley Wickham in person whether we could safely stick with R or if we should move to Python as soon as possible. His answer was encouraging, but even more so were the developments that followed. The R ecosystem is growing, becoming more modern, and integrating with the latest technologies. Personally, I have continued to use R as the sole programming language in my work, integrating it with tools like Docker, dbt, and many others.
+
+For a while, I was convinced that starting a new book from scratch would be a more exciting project. But I soon realized it would be even more valuable to make *R for Economic Research* an improved and enduring resource -- one that people could still rely on two years later, and hopefully for many more to come. I saw this as an opportunity to update the original chapters, include new ones that I believe are essential to address the challenges I've encountered during this time, and also to correct writing errors and enhance readability.
+
+In terms of technical content, the reader will find new chapters that fill some gaps from the previous edition -- some I intentionally left aside back then, others I only came across more recently. What these topics have in common is that they aim to provide tools for handling high-frequency data, enabling more flexible modeling, and integrating AI into daily workflows. I hope these additions bring new opportunities to your work.     
+
+# Preface to the First Edition {.unnumbered}
+
+Over the past years, I've received many messages asking what I consider to be the most important subjects to learn when starting a career in economic research. *R for Economic Research* is my contribution to those who already have some familiarity with R programming but still lack the tools needed to carry out professional economic analysis. This is an intermediate-level book designed to offer shortcuts for tackling a variety of tasks, along with valuable references for those interested in exploring more complex topics in depth.
+
+The reasoning behind the book can be summarized as follows:
+
+**Modern economic research requires a solid grasp of programming.**  
+With more and more data now accessible via APIs, it's possible to automate high-quality analyses almost instantly using efficient techniques. Moreover, unstructured data only becomes meaningful when properly processed. I chose R because I genuinely believe the *Tidyverse* offers an unparalleled data science workflow.
+
+**But programming alone isn't enough.**  
+I've interviewed several candidates who were highly proficient coders but lacked a basic understanding of applied time series methods. Many, for example, didn't know how to perform seasonal adjustments or how to deflate nominal values into real ones. Filling these gaps is essential.
+
+**A solid understanding of forecasting is vital.**  
+And I'm not referring to state-of-the-art machine learning models. In most cases, traditional statistical methods are more than enough. The real skill lies in setting up a workflow that produces reliable forecasts.
+
+**Economic modeling is at the heart of applied research.**  
+Estimating relationships between economic variables and producing projections is the core of what economic researchers do. While this topic requires theoretical and practical training that goes beyond the scope of this book, I believe it's valuable to show how to set up the basic framework for such models.
+
+**Taking it to the next level.**  
+Some tools can significantly expand your capabilities. Learning how to build and estimate state-space models is, without a doubt, a major step toward becoming a senior analyst.
+
+I truly hope you enjoy reading this book and that it proves helpful to your career.
+
+Feel free to reach out with suggestions or feedback via [email](mailto:leripiorenato@gmail.com) — I'd love to hear from you.
+
+# Acknowledgements {.unnumbered}
+
+First and foremost, I'd like to thank all those who generously contribute to the R community — whether by developing packages, sharing free content, or answering questions on Stack Overflow. I owe much of my learning to you, and this book is, to a large extent, my way of giving back.
+
+I also want to thank my therapist, Fátima Costa, for all the emotional support throughout this journey. Writing this book meant making myself vulnerable in many ways — sharing my skills publicly, writing in a language that isn't my native tongue, and more. I certainly feel more confident now than when I first started.
+
+While I handled most of the technical aspects of this book on my own, I was lucky to count on the help of some generous people along the way. Fernanda Boldrini, in particular, offered thoughtful and sensitive suggestions that helped shape the final version of the cover. Her delicate way of contributing made me feel more at ease and confident with the result — and I'm truly grateful for that.
+
+Finally, I dedicate this book to my family:  
+To my mother, Célia Leripio, and my father, João Bosco Gomes, who did everything they could to provide me with the education that made this possible.  
+To my sister, Nathália Leripio, and her newborn son, João Gabriel Leripio — to whom I hope to set good examples.
+
+# Data {.unnumbered}
+
+The datasets used throughout this book are available in the companion R package `R4ER2data`.
+
+You can install the package directly from GitHub using the following command:
+
+```{r}
+#| eval: false
+install.packages(
+  "https://github.com/leripio/R4ER2data/releases/download/v1.0.0/R4ER2data_1.0.0.tar.gz",
+  repos = NULL,
+  type = "source"
+)
+```
+
+Alternatively, if you prefer the development version:
+
+```{r}
+#| eval: false
+devtools::install_github("leripio/R4ER2data")
+```
+
+After installation, simply load the package with `library(R4ER2data)` to access the datasets used in the exercises.
+
+# Author {.unnumbered}
+
+I'm currently a Senior Analyst at [Kapitalo Investimentos](https://www.kapitalo.com.br/), leading the data science team within the economic research division. We design and implement tools for the estimation and forecasting of economic variables to support data-driven decision-making.
+
+For more information about me and my work, visit [rleripio.com](http://www.rleripio.com).
+
+# Citation {.unnumbered}
+
+Leripio, J. Renato. (2023) R for Economic Research: Essential tools for modern economic analysis. First Edition (Apr 2023). Available at http://book.rleripio.com
+
+# License {.unnumbered}
+
+<p xmlns:cc="http://creativecommons.org/ns#" xmlns:dct="http://purl.org/dc/terms/">
+
+<a property="dct:title" rel="cc:attributionURL" href="http://book.rleripio.com">R for Economic Research: Essential tools for modern economic analysis</a> by <a rel="cc:attributionURL dct:creator" property="cc:attributionName" href="http://www.rleripio.com">J. Renato Leripio</a> is licensed under <a href="http://creativecommons.org/licenses/by-nc-sa/4.0/?ref=chooser-v1" target="_blank" rel="license noopener noreferrer" style="display:inline-block;">Attribution-NonCommercial-ShareAlike 4.0 International<img src="https://mirrors.creativecommons.org/presskit/icons/cc.svg?ref=chooser-v1" style="height:22px!important;margin-left:3px;vertical-align:text-bottom;"/><img src="https://mirrors.creativecommons.org/presskit/icons/by.svg?ref=chooser-v1" style="height:22px!important;margin-left:3px;vertical-align:text-bottom;"/><img src="https://mirrors.creativecommons.org/presskit/icons/nc.svg?ref=chooser-v1" style="height:22px!important;margin-left:3px;vertical-align:text-bottom;"/><img src="https://mirrors.creativecommons.org/presskit/icons/sa.svg?ref=chooser-v1" style="height:22px!important;margin-left:3px;vertical-align:text-bottom;"/></a>
+
+</p>

@@ -1,0 +1,248 @@
+# Basic workflow
+
+```{r}
+#| include: false
+Sys.setlocale("LC_TIME", "English")
+```
+
+In recent years, forecasting has been widely associated with sophisticated Machine (or Deep) Learning methods such as XGBoost, LSTM, Random Forest, and Neural Networks. In fact, these algorithms have proven to be very effective in improving forecast accuracy across various contexts. However, in most day-to-day applications, simpler statistical methods deliver fairly good results at a very low cost of implementation. They can also serve as a useful benchmark for more complex models.
+
+In this chapter, we'll cover the basic steps to generate forecasts for a time series, making extensive use of the `forecast` package to predict the Brazilian CPI excluding regulated prices. I'd like to draw your attention to the fact that while choosing the appropriate method is important, it's only one part of the process. To be successful, we need to understand and carefully handle each step involved.
+
+For those interested in a more rigorous and detailed approach to this subject, I can't recommend the exceptional @fpp2 highly enough.
+
+## Step 1: Observe the Time Series Features
+
+Forecasting is all about extrapolating patterns. When our forecast depends on other variables, we're assuming that the historical relationship between the target and the explanatory variables will hold in the future. Likewise, when we employ univariate methods, the main assumption is that the time series features remain constant or evolve in an predictable way. Hence, the first step is to investigate the features of the time series.
+
+Let's import the monthly CPI excluding regulated prices (not seasonally adjusted) from the Brazilian Central Bank API using the `rbcb` package. Then, we'll plot the series using the `autoplot` function from the `forecast` package. Note that it's based on `ggplot`, so we can add `ggplot` layers to the plot.
+
+::: {.callout-tip}
+## Data
+monthly CPI excluding regulated prices (not seasonally adjusted) from the Brazilian Central Bank is available in the `R4ER2data` package under the name `cpi_br`.
+:::
+
+```{r}
+#| warning: false
+#| message: false
+library(forecast)
+library(tidyverse)
+cpi_br <- rbcb::get_series(
+  code = list("cpi" = 11428),
+  start_date = "2004-01-01",
+  end_date   = "2022-08-01",
+  as = "ts"
+)
+```
+
+```{r}
+#| label: fig-cpi_br_ex_autoplot
+#| fig-cap: Plot of Brazilian CPI ex-regulated prices - %MoM NSA
+autoplot(cpi_br) + 
+  labs(
+    title = 'Brazilian CPI ex-regulated prices - %MoM NSA',
+    y = '',
+    x = ''
+  ) +
+  scale_y_continuous(labels = function(x) paste0(x, '%'))
+```
+
+The figure above provides a general overview of the time series. We can visually infer that the average CPI was around 0.5% from 2004 to 2016, then dropped to about half that from mid-2016 to early 2020, before the Covid-19 pandemic hit the economy. This episode marked the beginning of a trend in which inflation rose to values close to 1%.
+
+A more informative plot can be obtained using the `mstl` function, which decomposes the series into trend, seasonal, and remainder (noise) components. These are precisely the features we're most interested in understanding in order to make accurate predictions.
+
+```{r}
+#| label: fig-cpi_br_ex_mstl
+#| fig-cap: MSTL Decomposition of the Brazilian CPI ex-regulated prices time series
+mstl(cpi_br) |> 
+  autoplot() +
+  labs(title = 'Brazilian CPI: time series decomposition')
+```
+
+We can extract two important pieces of information from this graph. First, the trend that began in the aftermath of the Covid-19 pandemic is flattening, although there are no clear signs of a reversal. Second, there is a noticeable change in the seasonal pattern starting in 2016, with higher peaks and a different shape. Therefore, when selecting an appropriate forecasting model, we should opt for those that offer flexibility in capturing both trend and seasonality -- in the case of univariate models -- or choose explanatory variables that can replicate this pattern to some extent.
+
+## Step 2: Split the Sample
+
+We need to split the sample into training and testing sets in order to evaluate our model. There are several splitting schemes, and the appropriate choice depends on the nature of the data and the sample size. For time series, the most robust scheme is *block cross-validation*, where many contiguous sections of the series are selected at random to train the model, and tests are performed on the adjacent observations. In practice, however, it's very common to use the *leave-one-out* approach, where we train the model using observations up to $t-1$ to predict the target at $t$. This procedure is iterated over $t$ to generate a representative set of (pseudo) out-of-sample forecasts that we can use to assess model accuracy.
+
+Note that the structural changes shown in @fig-cpi_br_ex_mstl have important implications for how we split the sample. More specifically, the new seasonal pattern accounts for about 40% of the sample, whereas the post-Covid trend appears in only 15%. Thus, testing our model over the full sample -- or over a sample that overrepresents this recent period -- could lead us to believe we have a good model for forecasting the future when, in fact, we don't.
+
+Let's make a simple, yet very common choice here: consider the sample starting in 2016 and use the *leave-one-out* approach beginning in Jan/2019 to predict twelve months ahead. We'll use the `rsample` package, which is part of the `tidymodels` ecosystem of R packages specifically designed to support forecasting in a tidy workflow. Since it follows the *tidy* philosophy, we first need to convert our data from `ts` to a `data frame` or `tibble`. It can be easily done using the `timetk` package.
+
+The `rolling_origin` function from `rsample` returns a convenient object where each *slice* contains two components -- the training set and the testing set -- which can be accessed through specific functions. The `initial` argument defines the size of the initial sample used for training; the `assess` argument defines how many observations are used for testing in each step; and `cumulative = TRUE` ensures that we do not drop the earliest observations as we expand the sample. In simpler words, we'll be using an *expanding-window* approach.
+
+```{r}
+#| warning: false
+#| message: false
+library(rsample)
+library(timetk)
+cpi_df <- 
+  tk_tbl(cpi_br, rename_index = 'date') |> 
+  filter(date >= 'jan 2016')
+cpi_split <- 
+  rolling_origin(
+    cpi_df, 
+    initial = which(cpi_df$date == 'dec 2018'),
+    assess = 1,
+    cumulative = TRUE
+  ) 
+cpi_split
+```
+
+As you can see, `cpi_split` contains 43 slices -- each slice is represented by a two-part sample in the form \[train set/test set\]. The first slice includes a training set ranging from Jan/2016 to Dec/2018 (36 observations) and a test set with a single observation in Jan/2019. The second slice incorporates the observation in Jan/2019 to the training set (now 37 observations) and uses Feb/2019 as the test set. The same logic applies to the remaining slices until the end of the sample. With our split scheme complete, we're ready to move on to the next step.
+
+## Step 3: Choose the Model
+
+Choosing an appropriate model involves several dimensions. First, we must decide whether or not to use explanatory variables -- and if so, which ones to include. In addition, we should weigh the pros and cons of using a machine learning model instead of a simpler method. Considerations such as the processing time and interpretability play a significant role in many applications. Since the purpose here is to develop intuition about each step of the forecasting pipeline, I'll sidestep these issues by assuming we're restricted to univariate statistical models only. This is by no means a strong limitation, as in real-life scenarios we are often required to produce reasonable forecasts quickly rather than spending a great deal of time searching for the most accurate numbers.
+
+The `forecast` package includes a wide range of useful univariate statistical models. ETS is generally my go-to choice when there is no obvious candidate, as it doesn't impose strong assumptions about the data (e.g., stationarity). In addition, it has been shown to perform very well across a variety of datasets in the [**M** Competition](https://en.wikipedia.org/wiki/Makridakis_Competitions).
+
+I use TBATS as a first approach when forecating high-frequency data (daily or higher), since it can accommodate multiple seasonal patterns. ARIMA is helpful for stationary data, especially when ACF/PACF plots show a well-defined autocorrelation structure. However, it's worth noting that in practice, statistical assumptions are often relaxed when the goal is forecasting rather than inference.
+
+In fact, producing accurate forecasts is inevitably a trial-and-error process, and as we gain more experience with the subject, some choices tend to stand out. For instance, we saw that the Brazilian CPI exhibits a changing trend -- favoring a more flexible model like ETS. On the other hand, for most of the period, this trend seems to evolve at a constant pace, which also makes ARIMA models good candidates.
+
+Moreover, in the presence of a seasonal pattern, models that are more successful at capturing the data's seasonality have a clear advantage. It's not uncommon for one model to better capture a specific feature of the data, while another performs better on a different feature -- which is why combining the forecasts from different models usually improves accuracy.[^forecasting-the-basic-workflow-1] Therefore, to produce a more reliable result, we'll generate forecasts from three sources: ETS, ARIMA, and their average.
+
+[^forecasting-the-basic-workflow-1]: It's also possible to fit a model for each time period -- an approach known as **direct forecast** -- or even to use different models for different horizons. However, we won't explore these topics here.
+
+```{r}
+cpi_fc <- cpi_split |> 
+  mutate(
+    ets_fc = map_dbl(
+      .x = splits, 
+      .f = ~ (.x |> 
+                analysis() |> 
+                tk_ts(select = 'value', start = c(2016,1), frequency = 12) |> 
+                ets() |> 
+                forecast(h = 1)
+      )$mean
+    ),
+    arima_fc = map_dbl(
+      .x = splits, 
+      .f = ~ (.x |> 
+                analysis() |> 
+                tk_ts(select = 'value', start = c(2016,1), frequency = 12) |> 
+                auto.arima() |> 
+                forecast(h = 1)
+      )$mean
+    ),
+    avg_fc = (arima_fc+ets_fc)/2,
+    date = map_chr(
+      .x = splits,
+      .f = ~ (.x |> 
+                assessment()
+      )$date |> 
+        as.character()
+    )  |> 
+      zoo::as.yearmon()
+  ) |> 
+  select(date, contains('fc')) |> 
+  right_join(cpi_df, by = 'date')
+cpi_fc
+```
+
+Now we have a data frame with the predictions from each source plus the actual (realized) value for the CPI for the last 45 months -- including periods pre-, during- and post-Covid. In the next section, we'll see how to get a representative summary of the results so as we can conclude which model is better. You may have a clue on how to do this, but I can assure you that there are some relevant aspects worth exploring that are hardly found elsewhere. Before moving to the next section, we can take a look on how these forecasts look like.
+
+```{r}
+#| code-fold: true
+#| code-summary: "Show the code"
+cpi_fc |> 
+  pivot_longer(-date, names_to = 'model', values_to = 'forecast') |> 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = forecast, color = model), lwd = 1) +
+  theme_light() +
+  scale_color_brewer(type = 'qual', palette = 6) +
+  theme(legend.position = 'top') +
+  labs(title = 'Brazilian CPI Forecasts - %MoM NSA',
+       y = 'CPI (%MoM NSA)',
+       color = '')
+```
+
+## Step 4: Evaluate the Model
+
+Choosing the best forecasting model can be stated in mathematical terms as a problem of minimizing an error metric -- such as the mean absolute error (MAE) or the root mean square error (RMSE), which are common choices. These metrics are loss functions, i.e., they express an objective. Consequently, we should be fully aware of what our objective is in order to translate it into an appropriate metric (or function).
+
+For example, MAE and RMSE are **symmetric functions** and use **simple average** to summarize forecasting errors. Using both of them to evaluate a model's accuracy is equivalent to saying: *"I don't care about the sign of the error -- 2 units up or down equally impact my result; also, it doesn't matter when the largest errors occurred -- over the last 3 observations or in the early part of the evaluation period".*
+
+Surely, these conditions don't apply to all businesses. Someone interested in forecasting the demand for electricity in a large city might prefer to be surprised on the downside rather than the upside. Also, a model with higher accuracy in the last 12 months might be better at capturing the current electricity demand pattern than a model with great performance during the initial periods of the testing sample. In short, many situations require us to define what conditions the model must meet -- and this involves designing a specific function. This function should summarize the forecast errors in a way that represent our objective.
+
+To demonstrate this idea, I will propose two alternative accuracy metrics that are slight modifications of the well-known MAE. The first (`accuracy_1`) assigns double the weight to upside errors (predictions below actual values), whereas the second (`accuracy_2`) assigns (linearly) decreasing weights to errors ocurring further in the past. You should be aware that the results from the two metrics are not directly comparable; the ordering of models is the relevant information here.
+
+```{r}
+accuracy_1 <- function(e){
+  .abs_weighted_errors      <- ifelse(e > 0, 2*e, abs(e))
+  .mean_abs_weighted_errors <- mean(.abs_weighted_errors)
+  return(.mean_abs_weighted_errors)
+}
+accuracy_2 <- function(e){
+  .abs_errors               <- abs(e)
+  .weights                  <- seq(from = 1, to = length(.abs_errors), by = 1)
+  .weights                  <- .weights/sum(.weights)
+  .mean_abs_weighted_errors <- weighted.mean(.abs_errors, .weights)
+  return(.mean_abs_weighted_errors)
+}
+```
+
+Below I plot the `accuracy_1` function along with the original MAE function as a more effective way to give you a sense of what's happening behind the scenes. Basically, for negative errors (realized value below the prediction), the weights are the same as in the original MAE, while they're somewhat higher for positive errors (realized value above the prediction).
+
+```{r}
+#| code-fold: true
+#| code-summary: "Show the code"
+#| warning: false
+#| message: false
+library(ggtext)
+acc_demo <- tibble(
+  x = seq(from = -2, to = 2, by = 0.01)
+) |> 
+  mutate(
+    t   = 1:n(),
+    Loss_1 = ifelse(x > 0, 2*x, abs(x)),
+    mae    = abs(x)
+  )
+acc_demo |> 
+  ggplot(aes(x = x)) + 
+  geom_line(aes(y = Loss_1), color = "darkblue", lwd = 1) +
+  geom_line(aes(y = mae), color = "red", lwd = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme_light() +
+  theme(
+    plot.title = element_markdown(lineheight = 1.1),
+    axis.title = element_text(size = 13),
+    legend.position = "none"
+  ) +
+  labs(
+    title = "<span style='color:#002266;'><b>Custom Loss Function</b></span> vs <span style='color:#ff1a1a;'><b>MAE</b></span>",
+    x = "Error", 
+    y = "Loss"
+  )
+```
+
+Now we're ready to apply our two custom functions plus the MAE to the errors we computed from the three models in order to decide which one is the most accurate. Again, these metrics aren't comparable to each other. Instead, we're interested in the ordering within the same metric.
+
+In addition, there's no such thing as the best metric. As we saw earlier in this section, the appropriate metric is the one that reflects our objective as closely as possible. Moreover, we find several desirable characteristics in conventional metrics such as MAE or RMSE, and I don't mean to rule them out (see @hyndman_metrics for more on this). The main message here is that we must be fully aware of what our objective is and how to translate it into an appropriate function. In this regard, the knowledge of functional forms is essential.
+
+```{r}
+cpi_errors <- cpi_fc |> 
+  filter(date >= 'Jan 2019') |> 
+  mutate(across(contains('fc'), ~ value - .x, .names = 'error_{.col}')) |> 
+  summarise(
+    across(
+      contains('error'), 
+      list(
+        'acc1' = ~ accuracy_1(.x), 
+        'acc2' = ~ accuracy_2(.x),
+        'mae'  = ~ mean(abs(.x))
+      ), 
+      .names = '{.col}-{.fn}')) |> 
+  pivot_longer(everything(), names_to = 'model_metric', values_to = 'value') |> 
+  separate('model_metric', c('model', 'metric'), '-') |> 
+  pivot_wider(names_from = 'metric', values_from = 'value') |> 
+  mutate(model = str_remove_all(model, 'error_|_fc'))
+cpi_errors
+```
+
+The results show that the ARIMA model is the most accurate according to the three metrics, outperforming even the average model. At this point, I'd like to conclude with two considerations. The first is that combining models usually improves performance, but not always, as the above exercise makes clear.
+
+Nevertheless, although the literature shows that using either the mean or median of the models is very difficult to beat, it's possible to improve accuracy by optimizing the weights assigned to each model.
+
+Finally, we compared the models based on their point forecasts. Despite being very common, this approach does not take into account the fact that each point forecast is a single realization of a random process, and there is a vast literature suggesting the use of density (or probabilistic) forecasts and distributional accuracy measures.

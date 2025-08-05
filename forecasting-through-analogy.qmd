@@ -1,0 +1,263 @@
+# Forecasting Through Analogy
+
+```{r}
+#| include: false
+Sys.setlocale("LC_TIME", "English")
+```
+
+Forecasting is best understood as the task of extrapolating historical patterns of a given process to infer a plausible range for future values. Sometimes, however, we don't have historical patterns to rely on. Think of the onset of COVID-19 outbreak in 2020: the event was entirely new and, apart from some insights borrowed from the epidemiological literature, we had very little understanding of how the virus would spread -- nor did we have enough data to perform even a minimally robust analysis.
+
+In this section, we'll discuss a widely used technique to predict variables for which we have no direct data: **comparison**. The basic idea is to look for a similar event, either from the past or unfolding elsewhere, and assume that our variable of interest will follow a comparable pattern. The most important -- and most difficult -- step is to choose reasonable comparison units. Ultimately, the credibility of the exercise hinges on this choice. We'll walk through two examples to show how a blend of creativity and statistical reasoning can yield surprisingly good answers to otherwise intractable questions.
+
+## The Early Days of COVID-19 in Brazil
+
+It was the beginning of March 2020, and we were seeing new cases of COVID spreading rapidly across countries in Asia and Europe. In Brazil, the outbreak would begin just a few weeks later. At that time, I was working at Itaú Asset Management, a well-known hedge fund in Brazil. Portfolio managers and analysts needed an accurate yet timely sense of how the situation would evolve domestically in order to make reasoned decisions and track of the potential impact on both economic and financial variables.
+
+However, Brazil was just entering the early stages of the epidemic curve, and only a handful of data points were available -- not enough to estimate any model with confidence. How could I deliver a reliable answer?
+
+I began looking for patterns in countries that were already a few weeks ahead in the process. This search yielded some interesting clues. In particular, I noticed that in several countries, the daily increase in cumulative cases was very noisy up to the 100th confirmed case, but then seemed to decline gradually -- though not steadily -- as a function of time. We can see this in the plot below.
+
+::: {.callout-tip}
+## Data
+The data set containing confirmed cases of COVID-19 is available in the `R4ER2data` package under the name `covid_cases`.
+:::
+
+```{r}
+#| warning: false
+library(tidyverse)
+covid_confirmed <- R4ER2data::covid_cases
+covid_cumulative <- covid_confirmed |>
+  filter(type == "confirmed") |>
+  group_by(Country.Region) |>
+  mutate(
+    acum_cases = cumsum(cases),
+    r = ((acum_cases/lag(acum_cases))-1)*100
+  ) |>
+  filter(acum_cases >= 100) |>
+  mutate(t = 1:n()) |>
+  ungroup()
+```
+
+```{r}
+#| warning: false
+library(gghighlight)
+countries_out <- c("Qatar", "Pakistan", "Dominican_Republic")
+covid_cumulative |>
+  dplyr::filter(
+    !Country.Region %in% countries_out,
+    t <= 50,
+    date <= '2020-03-17'
+  ) |>
+  ggplot(aes(x = t, y = r, color = Country.Region)) +
+  geom_line(lwd = 1) +
+  gghighlight(Country.Region %in% c("Brazil", "Italy", "Iran")) +
+  theme_light() +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  theme(legend.position = "none") +
+  labs(
+    title = "Daily increase in total cases for available countries (%)",
+    subtitle = 'Data up to 2020-03-17',
+    x = "Days after 100th confirmed case",
+    y = "", 
+    color = "",
+    caption = "Data: European Centre for Disease Prevention and Control."
+  )
+```
+
+I could leverage this fact to obtain future values for Brazil. Of course, that reasoning assumed that the daily increase in total cases for Brazil would, on average, resemble the path of a given country -- or a pool of countries (if using a panel regression). This was not a particularly strong assumption, especially considering the lack of domestic data.
+
+With that in mind, I decided to rule out countries that didn't appear to be reasonable benchmarks, such as China and South Korea, since they had imposed tight restrictions very quickly -- and I didn't expect Brazil to do the same. Two countries were seemingly good candidates back then: Iran and Italy. Both shared the time pattern described above. Furthermore, expectations were that stricter restrictions would be implemented only progressively -- something I suspected would happen in Brazil as well.
+
+So how did I make use of the information from these countries to produce forecasts for Brazil? First, I estimated the curve above using a simple OLS regression, with the sample starting from the 100th case -- the point where the time trend became noticeable. I chose to model each country separately so that I could assess each path later and eventually discard the one that performed worse.
+
+Let $r_t$ be the daily increase in total cases in period $t$, and $i = [\text{Italy, Iran}]$. Then,
+
+$$ log(r_{it}) = \beta_0 + \beta_1t_i \hspace{0.5cm} (1)$$ 
+
+The OLS estimate for this equation is shown below.
+
+```{r}
+#| results: asis
+#| warning: false
+data_reg <- covid_cumulative |>
+  dplyr::filter(
+    Country.Region %in% c("Italy", "Iran")
+  ) |>
+  plyr::dlply(.variables = "Country.Region")
+mod_eq <- 'log(r) ~ t' |> as.formula()
+fit_reg <- map(.x = data_reg, .f = ~ lm(mod_eq, data = .x))
+```
+
+```{r}
+library(jtools)
+
+export_summs(
+  fit_reg$Italy, 
+  fit_reg$Iran,
+  model.names = rev(names(fit_reg))
+)
+```
+
+Next, let $C_t$ be the number of total cases at time $t$. Thus, the total cases in Brazil at time $t+1$ are given by:
+
+$$ C_{t+1} = C_t \times \left(1+\frac{\hat{r_{it}}}{100}\right) \ (2)$$ where $\hat{r_{it}} = e^{\hat{\beta^0} + \hat{\beta_1}t_i}$
+
+Hence, the projected path from time $t$ to $t+k$, with $k = 1,2,3,4, ... ,T$, is given by:
+
+$$ C_{t+k} = C_t \times \prod_{t}^{k}\left(1+\frac{\hat{r_{it}}}{100}\right) \ (3)$$
+
+Note that we can use the fitted values from Equation (1) to obtain $\hat{r_{it}}$ as long as $t+k$ falls within the sample period of country $i$. For longer horizons not yet reached by country $i$, we can easily forecast $\hat{r_{it}}$, since the only covariate is time $t$ -- defined as the number of days after the 100th confirmed case.
+
+Suppose we are on March 16 -- the third day after Brazil exceeded 100 confirmed cases -- and we wish to compute the path for the next three days. Then we need $\hat{r}_{it}$ for $t =$ 4, 5 and 6, as well as $C_3 = 235$, the number of total cases recorded on March 16. We dubbed the forecasts for Brazil based on the fitted values from each country as *Iran-like* and *Italy-like*, respectively.
+
+For example, to produce the *Italy-like* path on March 16, we first take the (exponential of the) fitted values from the Italy model.
+
+```{r}
+1 + exp(fitted(fit_reg$Italy))/100
+```
+
+Then, we multiply the initial value -- the number of cases on March 16 -- by the cumulative product of $\hat{r}_{it}$ starting from $t = 4$. Note that we could produce forecasts for the next 55 days, since Italy was at day 55 after the 100th confirmed case.
+
+Also, we could generate a new forecast path each day by updating the actual value for $C$. This would certainly improve accuracy, since we would avoid carrying forward errors from early predictions for $t = 2, 3,..., T$. However, to keep the exercise simple, let's assume a single forecast path entirely based on $C_3 = 235$.
+
+-   March 17: $235 \times 1.44 = `r round(235*1.44,0)`$
+-   March 18: $235 \times 1.44 \times 1.41 = `r round(235*1.44*1.41,0)`$
+-   March 19: $235 \times 1.44 \times 1.41 \times 1.39 = `r round(235*1.44*1.41*1.39,0)`$
+
+We can avoid manual calculations by creating a function that takes these arguments -- $C$, $t$, and the regression model -- and returns the estimated number of total cases at time $t+k$.
+
+```{r}
+covid_fc <- function(model, C, t){
+  mod_fitted <- fitted(model)
+  r_t        <- 1+exp(mod_fitted)/100 
+  r_t_cum    <- r_t[t:length(r_t)] |>  cumprod()
+  out <- round(C*r_t_cum, 0)
+  return(out)
+}
+covid_fc(fit_reg$Italy, 235, 4)
+```
+
+Since our models are stored in a list object, we can use the `map` function to compute the results for both models in a single call.
+
+```{r}
+covid_br_fc <- 
+  map(
+    .x = fit_reg,
+    .f = ~ covid_fc(.x, 235, 4) |> 
+      as.data.frame() |> 
+      tibble::rownames_to_column() |> 
+      magrittr::set_colnames(c('t', 'forecast')) |> 
+      mutate(t = as.numeric(t))
+  ) |> 
+  plyr::ldply(.id = 'country') |> 
+  pivot_wider(names_from = 'country', values_from = 'forecast')
+```
+
+A visual representation makes the results easier to understand.
+
+```{r}
+#| warning: false
+data_plot <- covid_cumulative |> 
+  filter(Country.Region == 'Brazil') |> 
+  select(date, t, observed = acum_cases) |>
+  left_join(covid_br_fc) |> 
+  select(-t)
+data_plot |> 
+  filter(date <= '2020-04-01' & date >= '2020-03-17') |> 
+  pivot_longer(cols = -c('date'), names_to = 'var', values_to = 'value') |> 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = value, color = var), lwd = 1) +
+  theme_light() +
+  scale_x_date(date_breaks = '3 days', date_labels = '%b %d') +
+  scale_y_continuous(labels = function(x) format(x, big.mark = '.')) +
+  theme(
+    legend.position = 'top', 
+    axis.text = element_text(size = 13),
+    legend.text = element_text(size = 13)
+  ) +
+  labs(title = 'Covid total cases in Brazil - Observed vs. Forecasts',
+       subtitle = 'Estimated on March 16',
+       x = '', y = 'Total Cases', color = '') 
+```
+
+The actual values for Brazil were very close to those recorded by the two countries in the short term, and lay between the two curves in the medium term -- even though I haven't updated the forecasts here, which I did at the time. This result shows how simple exercises can play a significant role in real-world situations. In fact, we successfully relied on this strategy for a couple of months. At the time, both models produced good one- to seven-step-ahead forecasts from the beginning. For longer horizons, the Iran-like model maintained fairly stable accuracy, while the Italy-like model surprisingly improved over time.
+
+## The Second Wave in Brazil
+
+Questions shift quickly in financial markets. After some time, Brazil was experiencing a second wave of COVID-19, and a new set of containment restrictions had been implemented. As important dates for local retail approached, the big question was whether these restrictions would be lifted in time to avoid major economic damage.
+
+Note that this was no longer a matter of simply predicting new cases for the coming days. This time, we needed an estimate of the second-wave peak and the pace of its subsequent decline -- parameters that served as triggers for policy decisions. Once again, Brazil was a latecomer in this process, as several countries had already gone through their second wave. With the right approach, we could benefit from that lag.
+
+In general, how long does it take to reach the peak after the second wave begins? And how long does it take to reach the bottom after the peak? The first challenge was that the second wave unfolded asynchronously across countries. The number of days around the peak wasn't consistent either.
+
+However, looking at the plot below, we can see that a large number of peaks occurred between November 2020 and March 2021. At the time, I assumed this to be the typical second-wave window. Note that some countries had already entered a third wave, but I couldn't rely on that information, since this new cycle was still incomplete.
+
+```{r}
+#| warning: false
+covid_data <- R4ER2data::owid_covid
+covid_data |> 
+  filter(date <= '2021-05-01') |> 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = new_cases_smoothed, color = location)) +
+  theme_light() +
+  theme(legend.position = 'none') +
+  scale_y_continuous(labels = function(x) format(x, big.mark = '.')) +
+  scale_x_date(date_breaks = '2 months', date_labels = '%b/%y') +
+  annotate(
+    "rect",
+    xmin = as.Date('2020-11-01'),
+    xmax = as.Date('2021-03-01'),
+    ymin = -Inf, ymax = Inf,
+    alpha = .2) +
+  labs(title = 'Covid New Cases (smoothed) by country',
+       subtitle = 'Shaded Area = assumed 2nd wave',
+       x = '', y = 'Covid New Cases (smoothed)')
+```
+
+The idea I came up with was to zoom in on this period and compute the typical behavior of new cases around the peak. First, I filtered the November 2020 - March 2021 period, excluding Brazil from the dataset. Next, I created a variable called `peak_date`, defined as the earliest date on which each country recorded its maximum number of new cases during the period. I also created the variable `t_around_peak`, which counts the number of days before and after the peak date.
+
+Finally, I computed the median, as well as the first and third quartiles, of the distribution of new cases for each value of `t_around_peak`. Note that the data was standardized (scaled) beforehand to prevent countries with larger or smaller case numbers from disproportionately influencing the statistics.
+
+```{r}
+#| warning: false
+covid_2nd_wave <- covid_data |>
+  select(date, continent, location, new_cases_smoothed) |> 
+  filter(
+    location != 'Brazil',
+    between(date, as.Date('2020-11-01'), as.Date('2021-04-01'))
+  ) |> 
+  group_by(location) |>
+  mutate(
+    peak_date = min(date[which(new_cases_smoothed == max(new_cases_smoothed, na.rm = TRUE))]),
+    t_around_peak = (date - peak_date) |> as.numeric(),
+    new_cases_smoothed_std = scale(new_cases_smoothed)) |>
+  ungroup() |> 
+  filter(
+    !is.na(peak_date)
+  ) |> 
+  group_by(t_around_peak) |> 
+  summarise(
+    median = median(new_cases_smoothed_std, na.rm = TRUE),
+    lower  = quantile(new_cases_smoothed_std, probs = 0.25, na.rm = TRUE),
+    upper  = quantile(new_cases_smoothed_std, probs = 0.75, na.rm = TRUE)
+  ) |> 
+  ungroup()
+```
+
+```{r}
+#| warning: false
+covid_2nd_wave |> 
+  filter(between(t_around_peak, -80, 80)) |> 
+  ggplot(aes(x = t_around_peak)) +
+  geom_line(aes(y = median)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, fill = 'grey70') +
+  theme_light() +
+  scale_x_continuous(breaks = seq(-80, 80, 20)) +
+  labs(
+    title = 'Covid 2nd wave typical distribution around the peak',
+    x = '# of days before (-) and after (+) peak',
+    y = 'New cases smoothed (scaled)'
+  )
+```
+
+On average, the number of new cases increased rapidly for about 20 days until reaching the peak, and then declined over a similar time span. Interestingly, the pre-peak period showded greater uncertainty, as illustrated by the shaded area. Once again, the exercise proved highly useful, as the realized values aligned closely with expectations.

@@ -1,0 +1,317 @@
+# Scaling-up tasks
+
+In the introductory chapter, we saw how to import, organize, and visualize data. However, little attention was given to situations that require greater efficiency or scalability. This chapter takes a step further by extending the previous knowledge to deal with more challenging scenarios.
+
+For this exercise, we will use the Google Mobility data. Google began releasing this data on a daily basis shortly after the COVID outbreak spread across the world in mid-February 2020. Since then, it has been widely used for various purposes, from assessing economic activity to designing public policies. Despite being a well-organized dataset, it still offers the opportunity for real-life data wrangling and for exploring good practices from importing to visualization.[^scaling-up-1]
+
+[^scaling-up-1]: As of 2022-10-15, Community Mobility Reports are no longer updated, although all historical data remains publicly available.
+
+## Importing data
+
+Google offers two ways to download its mobility data. You can either get a single .csv file containing all available countries, or a .zip file with a separate .csv for each country. We will stick with the latter for a simple reason: we are probably not interested in analyzing every single country, and as data sets grow larger, it's much more efficient to import only the data we need.
+
+We begin by downloading the .zip file to the `data` folder.
+
+```{r}
+#| eval: false
+download.file(
+  url      = 'https://www.gstatic.com/covid19/mobility/Region_Mobility_Report_CSVs.zip',
+  destfile = 'data/Region_Mobility_Report_CSVs.zip'
+)
+```
+
+Now suppose we want to analyze a small group of countries. In this case, a better approach is to import only the .csv files corresponding to these countries and then bind them together. After a brief inspection of the .zip file, we can see a clear pattern in file names: **year_country-code**\_Region_Mobility_Report.csv. For example, the file containing data for Brazil in 2021 is **2021_BR**\_Region_Mobility_Report.csv.
+
+So, our first task is to produce a vector with the desired file names. This vector will later be used to extract the corresponding .csv files from the .zip archive. We can call `Sys.Date()` to retrieve the current year and use it as the endpoint of our sequence of years. Whether you are reading this book in 2022 or 2030, and Google still releases mobility data with file names following the same pattern, you can safely use the solution below.
+
+```{r}
+#| warning: false
+#| message: false
+library(tidyverse)
+library(lubridate)
+library(glue)
+countries_codes  <- c('BR', 'US', 'DE', 'ZA', 'SG', 'AU')
+years            <- seq(from = 2020, 
+                        to = year(Sys.Date()), 
+                        by = 1
+)
+google_filenames <- 
+  cross2(years, countries_codes) |> 
+  map_chr(
+    .f = ~ .x |> 
+      glue_collapse(sep = '_') |>
+      glue('_Region_Mobility_Report.csv')
+  )
+```
+
+The `cross2` function creates all the combinations between codes and years that we need to replicate the first part of the file names. The final part is static, so it's just a matter of appending this piece to each element of the vector. A sample of the result is shown below:
+
+```{r}
+#| echo: false
+google_filenames |> head(10)
+```
+
+To finish up, we now resort to the `map` function to extract each file from the .zip archive. At this stage, I'd like to draw your attention to something very important. Remember that we are ultimately interested in binding together all the .csv files listed in `google_filenames`. Since Google's files contain columns for both country and date, we could safely use `map_dfr` to automatically stack the data -- which would save us a few lines of code.
+
+However, it could happen that these files do not contain identifying columns -- this information being present only in the file name. This is quite common in real-life applications. So, if we naively stacked these files, we would never be able to tell which country or time period each part of the resulting data frame refers to.
+
+Another issue that could cause problems is if any of the elements in `google_filenames` didn't exist -- for example, if there were no data for Germany in 2021. In that case, the `map` function would throw an error and interrupt the task, even if all the other files were present. To prevent this, we can use the `possibly` function from `purrr` package, which replaces errors (or any side effects) with an alternative output. In this case, we can replace the error with a `NULL` element in the list.
+
+Therefore, the efficient strategy in this case is:
+
+1.  Use the `map` function to import each file as an element in a list, wrapping it with the `possibly` function to avoid errors stopping the whole process.
+2.  Assign meaningful names to each element of that list using `set_names` from the `magrittr` package.
+3.  Call the `ldply` function from the `plyr` package to stack the elements.
+
+The `ldply` function is very convenient here because it carries the names of the elements in the list into the resulting data frame as a new column. In addition, it has several other useful features, such as applying a generic function to each list element before stacking it.
+
+In this example, the file names contain both the country code and year for each dataset. Thankfully, we have a very simple pattern, and we can extract the relevant information from the first seven characters of each element in our `google_filenames` vector. More complex patterns would require the use of regular expressions.
+
+```{r}
+#| warning: false
+#| message: false
+library(plyr)
+library(magrittr)
+mobility_data <- 
+  map(
+    .x = google_filenames, 
+    .f = possibly(
+      ~ read_csv(unz('data/Region_Mobility_Report_CSVs.zip', .x)),
+      otherwise = NULL
+    )
+  ) |> 
+  set_names(str_sub(
+    google_filenames, start = 1, end = 7)
+  ) |> 
+  ldply(.id = 'year_country')
+```
+
+## Preparing the data
+
+Now the we have successfully imported the data for the selected countries, it's time to produce useful content. Let's begin by taking a closer look at the structure of the dataset. We can remove the `year_country` column, as it was included only for pedagogical purposes and won't be needed going forward.
+
+```{r}
+#| echo: false
+#| warning: false
+mobility_data <- mobility_data |> 
+  select(-year_country)
+```
+
+```{r}
+mobility_data |>
+  glimpse()
+```
+
+We can see that our dataset has about 4.7 million rows and 15 columns. The most relevant information is stored in the columns ending with `percent_change_from_baseline`. These are precisely the measures of mobility for categorized places. Other columns of interest include those containing `region`, and of course, the `date` column. I recommend taking some time to explore the dataset. You will notice that the `sub_region_*` columns refer to regional breakdowns such as states and municipalities. They are `NA` for aggregate levels.
+
+Suppose our ultimate goal is to create a plot showing the average mobility across all categories for each country at the national level. We already know that a strong seasonal pattern is very likely to be present. For example, mobility in workplaces tends to be higher on weekdays and lower on weekends. The opposite is usually true for parks. Creating a 7-day rolling mean of the original time series should address this issue.
+
+Finally, we need to invert the residential mobility values, since higher residential mobility implies lower mobility elsewhere, and vice versa. So, if we want to aggregate all the mobility categories into a single measure (the average), they must point in the same direction.
+
+Hence, our task is to produce a data frame containing only the relevant variables. This involves, for each country, the following sequence of actions:
+
+1.  Filter the national-level data.
+2.  Invert the direction of residential mobility (i.e., change the sign).
+3.  Transform each mobility category column into a 7-day moving average.
+4.  Create a column with the average mobility across categories.
+5.  Remove the irrelevant variables.
+
+This should not be too challenging, and we can accomplish it with a few lines of code using the right features from the `dplyr` package. I consider Items 3 and 4 the most important because we're often tempted to offer a cumbersome solution -- one that can easily be avoided with the proper tools. But before jumping into the best approach, let's see what an inefficient solution might look like for Item 3. Using the `roll_meanr` function from the `RcppRoll` package to compute 7-day rolling means, our first attempt could look like this:
+
+```{r}
+#| eval: false
+#| warning: false
+library(RcppRoll)
+
+mutate_try1 <- mobility_data |> 
+  group_by(country_region) |> 
+  arrange(date) |> 
+  mutate(
+    retail_and_recreation_percent_change_from_baseline = roll_meanr(retail_and_recreation_percent_change_from_baseline, 7, na.rm = TRUE),
+    grocery_and_pharmacy_percent_change_from_baseline  = roll_meanr(grocery_and_pharmacy_percent_change_from_baseline, 7, na.rm = TRUE),
+    parks_percent_change_from_baseline                 = roll_meanr(parks_percent_change_from_baseline, 7, na.rm = TRUE),
+    transit_stations_percent_change_from_baseline      = roll_meanr(transit_stations_percent_change_from_baseline, 7, na.rm = TRUE),
+    workplaces_percent_change_from_baseline            = roll_meanr(workplaces_percent_change_from_baseline, 7, na.rm = TRUE),
+    residential_percent_change_from_baseline           = roll_meanr(residential_percent_change_from_baseline, 7, na.rm = TRUE)
+  ) |> 
+  ungroup()
+```
+
+This solution is terrible. Nevertheless, I come across it very often. Fortunately, we already have a way to avoid it. The first step toward a better solution is to use the `across` function from the `dplyr` package and replace the variable name on the right-hand side with `.x`. This will eliminate part of the redundancy.
+
+```{r}
+#| eval: false
+library(RcppRoll)
+
+mutate_try2 <- mobility_data |> 
+  group_by(country_region) |> 
+  arrange(date) |> 
+  mutate(
+    across(retail_and_recreation_percent_change_from_baseline, ~ roll_meanr(.x, 7)),
+    across(grocery_and_pharmacy_percent_change_from_baseline, ~ roll_meanr(.x, 7)),
+    across(parks_percent_change_from_baseline, ~ roll_meanr(.x, 7)),
+    across(transit_stations_percent_change_from_baseline, ~ roll_meanr(.x, 7)),
+    across(workplaces_percent_change_from_baseline, ~ roll_meanr(.x, 7)),
+    across(residential_percent_change_from_baseline, ~ roll_meanr(.x, 7))
+  ) |> 
+  ungroup()
+```
+
+Ok, we've made some progress in cutting down part of the repetition, but we can certainly do better. Note that the variables we are interested in follow a clear pattern: they all end with **percent_change_from_baseline**, or simply **baseline**. We can take advantage of this to further improve our solution using **select helpers** -- expressions that allow us to refer to specific patterns in column names. For instance, we could use the select helper `ends_with` to create the 7-day rolling mean for all variables ending with **baseline**.
+
+In addition, we can use the `.names` argument to assign a `glue`-style name to the new variables: `{.col}` refers to the original column name, and `{.fun}` to the name of the function. This is great for identifying which function was applied to each variable. In this case, we can use a **ma7d** suffix, which stands for *moving-average 7-days*.
+
+```{r}
+#| eval: false
+#| warning: false
+library(RcppRoll)
+
+mutate_topsolution <- mobility_data |> 
+  group_by(country_region) |> 
+  arrange(date) |> 
+  mutate(across(ends_with('baseline'), ~ roll_meanr(.x, na.rm = TRUE), .names = '{.col}_ma7d')) |> 
+  ungroup()
+```
+
+The main lesson here is to avoid using variable names directly to perform operations. Instead, whenever possible, we should rely on the combination of `across` and select helpers. This prevents us from unnecessarily repeating variable names and, as a result, makes it easier to scale up our work.
+
+The same reasoning applies to Item 4. Can you see how? Remember that Item 4 asks us to create a column with the average mobility across categories. Well, all these columns end with *baseline*. Therefore, we don't need to manually rewrite all the variable names to create a new column with the mean -- we can simply use select helpers. The only difference is that now we need to apply an operation across rows rather than across columns.
+
+We can accomplish this by using the `rowwise` function from the `dplyr` package. Roughly speaking, this function turns every row of the data frame into its own group. Then, you can perform your calculation on that group (i.e., the row). In addition, we need to replace the `across` function with the `c_across` function. The `c_across` function is simply the row-wise equivalent of `across`. Remember to call `ungroup` to turn off row-wise mode and return to the default column-wise behavior once you no longer need to operate across rows.
+
+Below is the full solution for Items 1 to 5.
+
+```{r}
+library(RcppRoll)
+
+mobility_final <- mobility_data |> 
+  dplyr::filter(is.na(sub_region_1)) |>
+  dplyr::mutate(across(starts_with('residential'), ~ -1*.x)) |>
+  dplyr::group_by(country_region) |>
+  dplyr::arrange(date) |> 
+  dplyr::mutate(across(ends_with('baseline'), ~ roll_meanr(.x, 7, na.rm = TRUE), .names = '{.col}_ma7d')) |>
+  dplyr::ungroup() |> 
+  dplyr::rowwise() |> 
+  dplyr::mutate(avg_mobility = mean(c_across(ends_with('ma7d')), na.rm = TRUE)) |>
+  dplyr::ungroup() |> 
+  dplyr::select(date, country_region, ends_with('ma7d'), avg_mobility) 
+```
+
+## Plot information
+
+We have mobility data for six countries, and we now need to decide how to plot them. Time series are usually better presented as lines, but there are still some choices to be made. The most important one is whether we should display the countries data in a single panel or in multiple panels. It depends on the purpose of the plot. If we're interested in comparing countries over the same time period, then a single graph is the natural choice. On the other hand, if our goal is to observe the evolution in each country in more detail, then separate plots are more appropriate.
+
+Let's go with the latter in this example, using the `facet_wrap` feature. In this case, we're segmenting our plot by country, but we're not limited to segmenting by just one variable. Additionally, we could use the argument `scales = 'free_y'` to adjust each graph's y-axis to the range of its data. However, that's not desirable here, as we want to make visual comparisons between countries as straightforward as possible.
+
+```{r}
+#| warning: false
+mobility_final |> 
+  ggplot(aes(x = date, y = avg_mobility)) +
+  geom_line() +
+  facet_wrap(~ country_region) +
+  labs(title = 'Average mobility in selected countries - % change from baseline',
+       subtitle = '7-days moving average',
+       x = '',
+       y = 'Average mobility (% change from baseline)',
+       caption = 'Data source: Google') +
+  geom_hline(yintercept = 0, linetype = 2) +
+  theme_light()
+```
+
+## From code to function
+
+We have written the full code to import, prepare, and visualize the data. Perhaps this analysis will become part of our routine -- or that of a stakeholder. If that happens, it's desirable to be able to look at other countries as well. So, a good practice in this case is to wrap our code into a function.
+
+Creating a function is highly recommended whenever we perform a repeated action with different sets of arguments. Here, we can think of three arguments we might want to vary: the country, the time span, and the window size of the rolling mean. Therefore, our task is to gather all the code we've written so far and turn these three inputs into function arguments.
+
+Note, however, that converting code into a function raises some challenges. For example, when writing the code earlier, we used a vector to import data for multiple countries. That's not the most efficient approach, as each file is relatively large, and execution may be slow. This becomes a real concern when writing functions, because they are often used to loop over large sets of arguments -- such as many countries. In such cases, we would prefer to process the task in parallel rather than serially.
+
+We could perform this parallel processing inside the function, but I usually prefer to keep things simpler and more transparent. That means writing a function that plots only a single country -- and, if needed, using `map` to process as many countries as we want, potentially in parallel.[^ds_googlemob-2]
+
+[^ds_googlemob-2]: The `furrr` package makes it incredible simple to run the `map` function in parallel. See: https://furrr.futureverse.org/ for a comprehensive approach.
+
+Another minor, yet important, issue is that when writing a function, we need to use its arguments consistently -- not just in obvious places. For example, when preparing the data, we included a `ma7d` to the column names to indicate that they contained a 7-day rolling mean. That label was then reused in other steps -- such as when computing the average mobility, and in the plot subtitle. So, we must ensure this argument is accounted for throughout the function. To achieve thas, we'll use the `glue()` function to create custom labels dynamically.
+
+```{r}
+#| message: false
+#| warning: false
+plot_mobility <- function(country_code, start_date, end_date, ma_window){
+  library(lubridate)
+  library(tidyverse)  
+  library(glue)
+  # Import data
+  countries_codes <- country_code
+  years <- seq(from = 2020,
+               to   = year(Sys.Date()), 
+               by   = 1)
+  google_filenames <- 
+    cross2(years, countries_codes) |> 
+    map_chr(
+      .f = ~ .x |> 
+        glue_collapse(sep = '_') |>
+        glue('_Region_Mobility_Report.csv')
+    )
+  mobility_data <- 
+    map_dfr(
+      .x = google_filenames, 
+      .f = possibly(
+        ~ readr::read_csv(unz('data/Region_Mobility_Report_CSVs.zip', .x)),
+        otherwise = NULL
+      )
+    )
+  # Prepare data
+  mobility_prep <- mobility_data |> 
+    dplyr::filter(is.na(sub_region_1)) |>
+    dplyr::mutate(across(starts_with('residential'), ~ -1*.x)) |>
+    dplyr::group_by(country_region) |>
+    dplyr::arrange(date) |> 
+    dplyr::mutate(across(ends_with('baseline'), ~ roll_meanr(.x, ma_window, na.rm = TRUE), .names = '{.col}_ma{ma_window}d')) |>
+    dplyr::ungroup() |> 
+    dplyr::rowwise() |> 
+    dplyr::mutate(avg_mobility = mean(c_across(ends_with(glue('ma{ma_window}d'))), na.rm = TRUE)) |>
+    dplyr::ungroup() |> 
+    dplyr::select(date, country_region, ends_with('baseline'), avg_mobility) 
+  # Output: plot
+  mobility_prep |> 
+    dplyr::filter(between(date, ymd(start_date), ymd(end_date))) |> 
+    ggplot(aes(x = date, y = avg_mobility)) +
+    geom_line() +
+    labs(
+      title = glue('Average mobility in {country_code} - % change from baseline'),
+      subtitle = glue('{ma_window}-days moving average'),
+      caption = 'Data source: Google'
+    ) +
+    geom_hline(yintercept = 0, linetype = 2) +
+    theme_light()
+}
+```
+
+We can now use the `plot_mobility` function to visualize any country we want, with the desired time span and rolling mean window.
+
+```{r}
+#| message: false
+#| warning: false
+plot_mobility('BR', '2020-03-01', '2022-10-15', 14)
+```
+
+Or we can use `map` to generate plots for multiple countries and the special operators from `patchwork` package [^ds_googlemob-3] to arrange them in a convenient layout.
+
+[^ds_googlemob-3]: See https://ggplot2-book.org/arranging-plots.html to learn how to use the special operators provided by `patchwork` to arrange the plots.
+
+```{r}
+#| message: false
+#| warning: false
+library(patchwork)
+countries <- c('BR', 'FR')
+mobility_countries <- map(
+  .x = countries, 
+  .f = plot_mobility, 
+  '2020-03-01', 
+  '2022-10-15',
+  14
+) |> 
+  set_names(countries)
+mobility_countries[[1]] / mobility_countries[[2]]
+```
+
+To finish up, we must keep in mind that a function that returns a plot is not very flexible. It may be better to consider returning the processed data instead -- or even the plot and the data. This would allow us to customize the plot or perform additional analysis as needed. It's also inefficient to download and prepare the data every time the function is called. A better solution in this case would be to store the processed data in a database, for example.

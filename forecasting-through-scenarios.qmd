@@ -1,0 +1,135 @@
+# Forecasting Through Scenarios
+
+```{r}
+#| include: false
+Sys.setlocale("LC_TIME", "English")
+```
+
+We don't always build new econometric or machine learning models to make predictions. More often than not, we rely on equations with calibrated coefficients -- either drawn from the literature or obtained from previously estimated model -- that informs us how a variable of interest evolves. With this information, we can make forecasts conditional on scenarios for the explanatory variables.
+
+For example, suppose it's widely known that the CPI increases by approximately 0.5 percentage points for every 10% of depreciation in the exchange rate of a given country. In this case, we can make CPI forecasts based on expected exchange rate movements under different scenarios (all else being equal): in Scenario A, it rises by 5%; in Scenario B, it falls by 7%; and so on.
+
+This approach is widely used and, although very useful, it has some limitations. The most important one is that it doesn't provide a a full predictive distribution from which we could infer the uncertainty around the central forecast. The common practice is to define upper and lower bound scenarios and assume that all values within this range are equally likely.
+
+However, in many situations we do have a sense of the risk associated with each scenario. For example, it may be more likely that the exchange rate increases rather than decreases by the end of the year. Moreover, our prediction might depend on more than one variable, in which case, we must also account for the interaction among their possible values.
+
+An elegant way to address these issues is to generate probability distributions that reflect our beliefs about each variable, and then simulate a large number of joint scenarios for the outcome. To better understand this idea, consider a classic example from macroeconomics textbooks: the evolution of public debt. For simplicity, assume that the debt-to-GDP ratio evolves according to the following expression:
+
+$$ \Delta b_{t+1} = (r_{t+1} - g_{t+1}) \times b_{t} - s_{t+1} $$
+
+where $b$ is the debt-to-GDP ratio, $r$ is the real interest rate, $g$ is the real GDP growth rate, and $s$ is the government primary surplus as proportion of GDP.
+
+Now, suppose the following assumptions for the variables on the right-hand side of the equation:
+
+1.  CPI is expected to remain around the 2% target, but with a higher probability of ending the year above rather than below it.
+
+2.  GDP is projected to grow by 3%, but with downwards risks.
+
+3.  The interest rate is expected to be raised either to 3% (with 40% probability) or to 4% (with 60% probability).
+
+4.  The primary surplus is assumed to be zero, with no associated uncertainty.
+
+We'll start by building skewed distributions for both CPI and GDP using the `sn` package. The first step is to specify the parameters of a Gaussian distribution -- the mean and standard deviation -- along with a `gamma` parameter that controls the degree of skewness. Then, we use the `rsn` function to draw random values from the distributions defined by these parameters. As for the interest rate, we can just use the `sample()` function.
+
+```{r}
+#| warning: false
+library(tidyverse)
+library(sn)
+set.seed(123)
+sn_parameters <- map(
+  .x = list(
+    "CPI" = c(mean = 2.0, s.d. = 0.4, gamma = 0.8),
+    "GDP" = c(mean = 3.0, s.d. = 0.6, gamma = -0.8)
+  ),
+  .f = cp2dp, family = 'sn'
+)
+# Number of simulations
+n_sim <- 1000
+variables_sim <- tibble(
+  CPI  = rsn(n_sim, dp = sn_parameters[['CPI']]),
+  GDP  = rsn(n_sim, dp = sn_parameters[['GDP']]),
+  IR   = sample(c(3.0, 4.0),  n_sim, 
+                prob = c(0.40, 0.60), 
+                replace = TRUE
+  )
+)
+```
+
+Defining the values of the `gamma` parameter is largely a matter of trial and error until the desired distribution shape is achieved. I intentionally exaggerated the parameter values to make the asymmetry more evident. In addition, we must be cautious with the number of simulations, as this process can be very memory intensive. Below, we visually inspect the results.
+
+```{r}
+#| warning: false
+variables_sim |> 
+  rowid_to_column(var = 'n') |> 
+  pivot_longer(-n, names_to = 'var', values_to = 'value') |> 
+  ggplot(aes(x = value)) +
+  geom_histogram(fill = "steelblue2", alpha = 0.8) +
+  theme_bw() +
+  scale_x_continuous(labels = function(x) paste0(x, '%')) +
+  facet_wrap(~ var, scales = 'free_y') +
+  labs(
+    title = 'Asymmetric Distributions',
+    x = "value",
+    y = "n"
+  )
+```
+
+Next, we'll use the `cross()` function from the `purrr` package to generate all possible combinations of the three variables -- effectively building our scenario set under the assumption that they are independent[^forecasting-through-scenarios-1].
+
+[^forecasting-through-scenarios-1]: For example, it would be more realistic to assume that the interest rate reaches 4% if inflation exceeds the target. We could encode rules to capture this kind of dependency and apply them to filter the `variables_sim` data frame accordingly.
+
+```{r}
+#| warning: false
+#| echo: false
+#| eval: true
+# Set eval: true if you don't have enough memory to run this exercise using the full sample
+set.seed(1) 
+variables_sim <- variables_sim |> 
+  slice_sample(prop = 0.1)
+```
+
+```{r}
+#| cache: true
+#| message: false
+#| warning: false
+scenarios_sim <- cross3(
+  .x = variables_sim$CPI,
+  .y = variables_sim$GDP,
+  .z = variables_sim$IR
+)
+```
+
+Finally, we compute the debt-to-GDP ratio for each scenario, assuming an initial value is 60%.
+
+```{r}
+#| cache: true
+debt2gdp_sim <- map_dbl(
+  .x = scenarios_sim, 
+  .f = function(x){
+    x <- unlist(x)
+    CPI  <- x[1]
+    GDP  <- x[2]
+    IR   <- x[3]
+    r    <- IR - CPI
+    b0   <- 60.0
+    b1   <- (r - GDP)*(b0/100)
+    return(b1)
+  }
+)
+summary(debt2gdp_sim)
+```
+
+We can examine some key statistics of the resulting distribution using the `summary()` function. In the most extreme scenarios, the debt-to-GDP ratio would increase by `r round(summary(debt2gdp_sim)['Max.'],2)`p.p or decrease by `r round(summary(debt2gdp_sim)['Min.'],2)`p.p, while the expected outcome is a more modest decline of around `r round(summary(debt2gdp_sim)['Median'],2)` p.p. Moreover, at least 75% of the simulated values are negative, indicating a general tendency toward debt reduction in most scenarios.
+
+```{r}
+#| warning: false
+#| message: false
+tibble(b1 = debt2gdp_sim) |> 
+  ggplot(aes(x = b1)) +
+  geom_histogram(fill = "steelblue3") +
+  labs(title = "Debt-to-GDP variation for the next period (p.p)",
+       y = "Frequency", x = "Variation (p.p)") +
+  theme(axis.text = element_text(size = 12),
+        title = element_text(size = 12)) +
+  theme_light()
+```
