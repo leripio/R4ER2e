@@ -1,20 +1,21 @@
 # R for Economic Research
 
-<table>
-<tr>
-<td>
+<div style="display: flex; align-items: center; justify-content: space-between;">
+
+<div style="flex: 1; padding-right: 20px;">
 
 **R for Economic Research** is a practical guide that teaches essential tools for data analysis and modeling in economics using the R programming language.  
 It covers real-world applications ranging from data cleaning and visualization to time series analysis, forecasting, and reproducible research.
 
 The book is aimed at economists, researchers, and data professionals who want to enhance their analytical skills using open-source tools.
 
-</td>
-<td>
+</div>
+
+<div>
 <img src="images/cover.png" alt="Book Cover" width="250"/>
-</td>
-</tr>
-</table>
+</div>
+
+</div>
 
 ---
 
@@ -36,7 +37,7 @@ install.packages(
 
 ## 🔄 Reproducibility
 
-This project uses the [`renv`](https://rstudio.github.io/renv/) package to manage the R package environment. See the `renv.lock` file in the repo.  
+This project uses the [`renv`](https://rstudio.github.io/renv/) package to manage the R package environment (see the `renv.lock` file in the repo).  
 To reproduce the exact environment used in the book, you can run:
 
 ```r
