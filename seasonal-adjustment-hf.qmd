@@ -154,3 +154,86 @@ The plot above shows that we were able to eliminate the largest regularly spaced
 Additionally, other features, such as trend changepoints, might play a role. To explore the additional features available in Prophet and better understand how to fine-tune its default parameters, I strongly recommend reading the package's [documentation](https://facebook.github.io/prophet/docs/quick_start.html#r-api).
 
 ### DSA
+
+The Daily Seasonal Adjustment (DSA) is a method proposed by Daniel Ollech for performing seasonal adjustment of high-frequency data (see @dsa). In general terms, it combines the STL method (see @fpp2) to extract multiple seasonal components from the time series with ARIMA regression to account for calendar effects. Interested readers can refer to the paper for more details on the methodology.
+
+As for its application, the `dsa` function offers many arguments to control the resulting series. Readers are also encouraged to consult the package [vignette](https://cran.r-project.org/web/packages/dsa/index.html) for further guidance. For our purposes, it will suffice to demonstrate how to implement the method to address common tasks.  
+
+We'll use the same time series as before — namely, credit card expenditures on goods. Unlike Prophet, however, the `dsa` function expects the input time series to be an xts object. So the first step is to create the appropriate object. 
+
+```{r}
+goods_xts <- xts::as.xts(x = goods_df$y, order.by = as.Date(goods_df$ds))
+```
+
+The second step is to define the holidays — and, possibly, other relevant *dummy* variables. These can be provided as a multiple time series object, where each column corresponds to a specific holiday, with values set to 1 on the holiday dates and 0 otherwise. The package includes a set of predefined holidays we can choose from, and we can, of course, add custom ones.
+
+For example, in the code below, I select some common holidays from the holidays dataset and manually add Black Friday and Brazil's Independence Day.
+
+```{r}
+holidays_names <- c(
+  "CarnivalMonday", 
+  "ChristmasDay", 
+  "CorpusChristi", 
+  "EasterPeriod", 
+  "NewYearsDay", 
+  "NewYearsEve",
+  "LabourDay"
+)
+
+my_holidays <- dsa::holidays[, holidays_names] |> 
+  as.data.frame() |> 
+  rownames_to_column(var = 'date') |> 
+  mutate(
+    BlackFriday     = ifelse(date %in% special_events$ds, 1, 0),
+    IndependenceBR  = ifelse(format(as.Date(date), '%m-%d') == '09-07', 1, 0)
+  )
+
+my_holidays_xts <- xts::xts(
+  my_holidays |>
+    arrange(date) |> 
+    select(-date),
+  order.by = as.Date(
+    my_holidays |> 
+      arrange(date) |> 
+      pull(date)
+  )
+)
+```
+
+The final input is then constructed using the `multi_xts2ts` function. Note that we provide two inputs. The first — `my_holidays_fit` — refers to the sample period of the holiday regressors, which matches the time series of credit card data. The second — `my_holidays_fc` — corresponds to the one-year-ahead period, used to obtain future values.
+
+```{r}
+my_holidays_fit <- dsa::multi_xts2ts(my_holidays_xts[goods_df$ds])
+my_holidays_fc  <- dsa::multi_xts2ts(
+  my_holidays_xts[as.Date(max(goods_df$ds):(max(goods_df$ds)+365))],
+  short = TRUE
+) 
+```
+
+We are now ready to perform the seasonal adjustment of the time series. Since the data is already in logarithmic scale, I set `Log = FALSE`. Note that the procedure may take a little while to complete.
+
+```{r}
+#| cache: true
+#| warning: false
+#| message: false
+dsa_fit <- dsa::dsa(
+  goods_xts, 
+  regressor = my_holidays_fit,
+  forecast_regressor = my_holidays_fc,
+  Log = FALSE,
+  progress_bar = FALSE
+)
+```
+
+After the procedure is completed, we can extract the seasonally adjusted data using the `get_sa()` function and inspect it visually using our preferred tool. In this case, I like using the `dygraphs` package because it produces an interactive plot, allowing us to identify the time period of a given data point simply by hovering the mouse over it — which is particularly helpful in this context.
+
+```{r}
+goods_dsa <- dsa::get_sa(dsa_fit)
+goods_dsa |> 
+  exp() |> 
+  dygraphs::dygraph()
+```
+
+<br>
+
+The figure reveals large spikes in several data points, which may be due to a variety of causes — such as omitted holidays, promotions, or even random noise. It's the analyst's duty to investigate these movements and address them when appropriate in order to produce reliable results.
