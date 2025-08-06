@@ -93,19 +93,12 @@ Note that we have data on GDP up to the third quarter of 2024 and Industrial Pro
 #| warning: false
 #| message: false
 model_data <- gdp_ip_br |> 
-  dplyr::arrange(date) |> 
-  dplyr::filter(date >= '2001-12-01') |> 
+  dplyr::arrange(date) |>
   dplyr::mutate(
     delta_gdp = 100 * log(gdp_br_sa/dplyr::lag(gdp_br_sa, 3)),
     delta_ip  = 100 * log(ip_br_sa/dplyr::lag(ip_br_sa, 1))
   ) |> 
-  dplyr::filter(date >= '2002-02-01') |> 
-  dplyr::arrange(date) |> 
-  dplyr::bind_rows(
-    tibble(
-      date = as.Date('2024-12-01')
-    )
-  )
+  dplyr::filter(date >= '2002-02-01')
 
 model_data_marss <- model_data |> 
   dplyr::select(delta_gdp, delta_ip) |> 
@@ -203,8 +196,9 @@ gdp_pred |>
     legend.position = 'top'
   ) +
   labs(
-    title = 'GDP Nowcast',
+    title = 'GDP Nowcast using Mix Frequency Data (%QoQ)',
     x = '',
-    y = ''
+    y = '',
+    color = ''
   )
 ```
