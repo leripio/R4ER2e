@@ -47,7 +47,7 @@ or the URL:
 #| message: false
 #| eval: false
 library(tidyverse)
-data_url <- 'https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv'
+data_url   <- 'https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv'
 covid_data <- read_csv(data_url)
 ```
 
@@ -122,6 +122,7 @@ cpi_request <- GET(url = api_request)
 cpi_content <- content(cpi_request, as = 'text')
 cpi_list    <- fromJSON(cpi_content, flatten = FALSE)
 cpi_tbl     <- cpi_list[['observations']] |> as_tibble()
+
 cpi_tbl
 ```
 
@@ -143,8 +144,7 @@ The COVID-19 data set from Our World in Data is available in the `R4ER2data` pac
 ```{r}
 covid_data <- R4ER2data::owid_covid
 
-covid_data |>  
-  glimpse()
+covid_data |> glimpse()
 ```
 
 We're usually not interested in all of these data, so the first couple of tasks we'd like to perform are to filter the relevant categories and select the desired columns. For example, we could be interested in analyzing new COVID cases (column `new_cases`) only in Brazil (rows equal to `Brazil` in column `location`). Furthermore, we'd like to get rid of duplicate rows, if there are any.
@@ -169,7 +169,7 @@ The `mutate` verb can be used to create new variables as a function of existing 
 ```{r}
 covid_data_sub2 <- covid_data_sub1 |>  
   mutate(
-    real_new_cases = 2*new_cases,
+    real_new_cases   = 2 * new_cases,
     dominant_strain  = case_when(
       date <= '2021-07-31'                        ~ 'Gamma',
       date >  '2021-07-31' & date <= '2021-12-31' ~ 'Delta',
@@ -209,6 +209,7 @@ covid_data_sub3 <- covid_data |>
   summarise(max_new_cases = max(new_cases)) |> 
   ungroup() |> 
   arrange(desc(max_new_cases))
+
 covid_data_sub3
 ```
 
@@ -226,6 +227,7 @@ covid_data_sub4 <- covid_data |>
   summarise(max_new_cases = max(new_cases)) |> 
   ungroup() |> 
   arrange(desc(max_new_cases))
+
 covid_data_sub4
 ```
 
@@ -247,6 +249,7 @@ covid_data_sub5 <- covid_data |>
   ungroup() |> 
   arrange(desc(max_new_cases), peak_date) |> 
   slice(1:10)
+
 covid_data_sub5
 ```
 
@@ -277,7 +280,11 @@ What we want here is to add the column *Pop_Size* from `europe_population` into 
 
 ```{r}
 covid_data_sub5_with_pop <- covid_data_sub5 |> 
-  left_join(europe_population, by = c('location' = 'Country'))
+  left_join(
+    europe_population, 
+    by = c('location' = 'Country')
+  )
+
 covid_data_sub5_with_pop
 ```
 
@@ -285,7 +292,11 @@ We could have been assigned a slightly different task -- for example, adding to 
 
 ```{r}
 pop_with_covid_info <- covid_data_sub5 |> 
-  right_join(europe_population, by = c('location' = 'Country'))
+  right_join(
+    europe_population, 
+    by = c('location' = 'Country')
+  )
+
 pop_with_covid_info
 ```
 
@@ -307,6 +318,7 @@ covid_uk <- covid_data |>
 covid_fr <- covid_data |> 
   filter(location == 'France') |> 
   select(date, location, new_cases, total_cases)
+
 covid_uk
 covid_fr
 ```
@@ -315,6 +327,7 @@ This can be easily accomplished with `bind_rows`, which, unlike the `*_join` fam
 
 ```{r}
 covid_fr_uk <- bind_rows(covid_fr, covid_uk)
+
 covid_fr_uk
 ```
 
@@ -337,6 +350,7 @@ covid_wide_01 <- covid_data |>
     names_from  = 'location', 
     values_from = 'new_cases'
   )
+
 covid_wide_01
 ```
 
@@ -352,6 +366,7 @@ covid_wide_02 <- covid_data |>
     values_from = c('new_cases', 'new_deaths'),
     names_sep   = '__'
   )
+
 covid_wide_02
 ```
 
@@ -369,6 +384,7 @@ covid_long_01 <- covid_wide_02 |>
     values_to = 'value',
     names_sep = '__'
   )
+
 covid_long_01
 ```
 
@@ -379,10 +395,14 @@ Converting a dataset between wide and long formats might not completely solve ou
 ```{r}
 #| echo: false
 covid_loc_cont <- covid_data |> 
-  filter(!is.na(location), !is.na(continent)) |> 
+  filter(
+    !is.na(location), 
+    !is.na(continent)
+  ) |> 
   unite(c('location', 'continent'), col = 'location', sep = '_') |> 
   select(location, date, new_cases, new_deaths) |> 
   distinct()
+
 covid_loc_cont
 ```
 
@@ -395,6 +415,7 @@ covid_separate <- covid_loc_cont |>
     into = c('location', 'continent'),
     sep  = '_'
   )
+
 covid_separate
 ```
 
@@ -404,9 +425,13 @@ The only caveat to all this simplicity arises when we have non-trivial separator
 #| echo: false
 covid_loc_cont2 <- covid_data |> 
   distinct() |> 
-  filter(!is.na(location), !is.na(continent)) |> 
+  filter(
+    !is.na(location), 
+    !is.na(continent)
+  ) |> 
   unite(c('location', 'continent'), col = 'location', sep = '') |> 
   select(location, date, new_cases, new_deaths)
+
 covid_loc_cont2
 ```
 
@@ -426,6 +451,7 @@ covid_unite <- covid_separate |>
     col = 'location', 
     c('location', 'continent'),
     sep = '_')
+
 covid_unite
 ```
 
@@ -438,6 +464,7 @@ covid_eu_nest <- covid_data |>
   filter(continent == 'Europe') |> 
   group_by(location) |> 
   nest()
+
 covid_eu_nest
 ```
 
@@ -488,8 +515,14 @@ The simplest case is when we have to remove a sequence of characters that is fix
 set.seed(123)
 covid_numCont <- covid_data |> 
   filter(!is.na(continent)) |> 
-  mutate(continent = sapply(continent, function(x) paste(sample(1:9, 1), x, sep = '.'))) |> 
+  mutate(
+    continent = sapply(
+      continent, 
+      function(x) paste(sample(1:9, 1), x, sep = '.')
+    )
+  ) |> 
   select(2:4, 6)
+
 covid_numCont |> 
   slice_sample(n =  10)
 ```
@@ -508,8 +541,14 @@ Nice. But what if the random numbers ranged from 0 to 10, as in the data frame b
 set.seed(123)
 covid_numCont <- covid_data |> 
   filter(!is.na(continent)) |> 
-  mutate(continent = sapply(continent, function(x) paste(sample(1:10, 1, prob = c(rep(0.3, 9), 0.6)), x, sep = '.'))) |> 
+  mutate(
+    continent = sapply(
+      continent, 
+      function(x) paste(sample(1:10, 1, prob = c(rep(0.3, 9), 0.6)), x, sep = '.')
+    )
+  ) |> 
   select(2:4, 6)
+
 covid_numCont |> 
   slice_sample(n =  10)
 ```
@@ -531,6 +570,7 @@ covid_typo <- covid_data |>
   select(2:4, 6)
 covid_typo[c(1,5), ]$continent <- 'Nort America'
 covid_typo[c(3,8), ]$continent <- 'Northh America'
+
 covid_typo
 ```
 
@@ -571,6 +611,7 @@ covid_ws <- covid_data |>
   select(2:4, 6)
 covid_ws[c(1,5), ]$continent <- 'North America '
 covid_ws[c(3,8), ]$continent <- 'North  America'
+
 covid_ws
 ```
 
@@ -654,8 +695,8 @@ brl_usd <- R4ER2data::brl_usd
 Note that the column date is in standard string (or character) format. We'll first convert it to the appropriate date format using the functions we've just learned.
 
 ```{r}
-brl_usd_aux <- brl_usd |> 
-  mutate(date = dmy(date))
+brl_usd_aux <- brl_usd |> mutate(date = dmy(date))
+
 brl_usd_aux
 ```
 
@@ -671,6 +712,7 @@ brl_usd_monthly <- brl_usd_aux |>
   ) |> 
   group_by(year, month) |> 
   summarise(brl_monthly = mean(brl))
+
 brl_usd_monthly
 ```
 
@@ -700,6 +742,7 @@ brl_usd_quarterly <- brl_usd_aux |>
   mutate(quarter = quarter(date, with_year = TRUE)) |> 
   group_by(quarter) |> 
   summarise(brl_quarterly = mean(brl))
+
 brl_usd_quarterly
 ```
 
@@ -756,6 +799,7 @@ brl_usd_monthly2 <- brl_usd_aux |>
   mutate(date = floor_date(date, unit = 'month')) |> 
   group_by(date) |> 
   summarise(brl_monthly = mean(brl))
+
 brl_usd_monthly2
 ```
 
@@ -778,10 +822,11 @@ The `purrr` package provides many interesting tools for working with functions a
 Let's start with a very simple example. Suppose we have three numeric vectors and we want to compute their means. Instead of calling `mean` on each vector separately, we can put them into a list and then use the `map` function in conjunction with the existing `mean` function.
 
 ```{r}
-v1 <- c(1,4,7,8)
-v2 <- c(3,5,9,0) 
-v3 <- c(12,0,7,1)
+v1    <- c(1,4,7,8)
+v2    <- c(3,5,9,0) 
+v3    <- c(12,0,7,1)
 v_all <- list(v1, v2, v3)
+
 map(.x = v_all, .f = mean)
 ```
 
@@ -803,7 +848,7 @@ Remember (or scroll up if necessary) that we created an object called `api_serie
 We will create the `get_series` function using the same content we already saw above, but leaving the `api_series_id` as a parameter (`series_id`). Note that I'll keep some objects with their original names -- starting with *cpi\_* -- just to avoid confusion. This has no practical effect, though.
 
 ```{r}
-get_series <- function(series_id){
+get_series <- function(series_id) {
   api_url       <- 'https://api.stlouisfed.org/fred/series/observations?'
   api_key       <- api_fred_key
   api_series_id <- series_id
@@ -814,7 +859,6 @@ get_series <- function(series_id){
   cpi_content   <- httr::content(cpi_request, as = 'text')
   cpi_list      <- jsonlite::fromJSON(cpi_content, flatten = FALSE)
   cpi_tbl       <- cpi_list[['observations']] |> tibble::as_tibble()
-  return(cpi_tbl)
 } 
 ```
 
@@ -833,13 +877,14 @@ id_list <- list(
   'Unemp' = 'UNRATE'
 )
 fred_data <- purrr::map(.x = id_list, .f = get_series)
+
 fred_data
 ```
 
 We could make our function more general by allowing more parameters to vary. For example, we could have a different time span for each series (the `obs_start` object). The procedure would be almost the same: we would add an extra parameter to the function, create two vectors (lists) with the parameter values, and use `map2` instead of `map`.
 
 ```{r}
-get_series2par <- function(series_id, series_start){
+get_series_2pars <- function(series_id, series_start) {
   api_url       <- 'https://api.stlouisfed.org/fred/series/observations?'
   api_key       <- api_fred_key
   api_series_id <- series_id
@@ -850,7 +895,6 @@ get_series2par <- function(series_id, series_start){
   cpi_content   <- httr::content(cpi_request, as = 'text')
   cpi_list      <- jsonlite::fromJSON(cpi_content, flatten = FALSE)
   cpi_tbl       <- cpi_list[['observations']] |> tibble::as_tibble()
-  return(cpi_tbl)
 } 
 
 time_list <- list(
@@ -858,18 +902,20 @@ time_list <- list(
   'GDP'   = '2012-04-01',
   'Unemp' = '2014-06-01'
 )  
-fred_data2 <- purrr::map2(.x = id_list, .y = time_list, .f = get_series2par)
+
+fred_data2 <- purrr::map2(.x = id_list, .y = time_list, .f = get_series_2pars)
 ```
 
 We must be careful with the example above because it may give the impression that `map2` takes variable names into account. It doesn't! It actually relies on the order of elements in each list. So, if we moved CPI to the second position in `time_list`, we would end up with GDP data using the CPI time span.
 
-A safer -- and therefore preferable -- alternative is to use names rather than positions as indexes. Since we can use `list[['element_name']]` to access an element in a list, we mcan reduce our problem to a single dimension by looping over variable names, which are the same in both lists.
+A safer -- and therefore preferable -- alternative is to use names rather than positions as indexes. Since we can use `list[['element_name']]` to access an element in a list, we can reduce our problem to a single dimension by looping over variable names, which are the same in both lists.
 
 ```{r}
 vars_fred <- c('CPI', 'GDP', 'Unemp')
+
 fred_data2_names <- map(
   .x = vars_fred, 
-  .f = function(x) get_series2par(
+  .f = function(x) get_series_2pars(
     series_id = id_list[[x]],
     series_start = time_list[[x]]
   )
@@ -896,17 +942,19 @@ covid_eu_nest |>
   mutate(
     max_total_cases = map_dbl(
       .x = data, 
-      .f = function(x){
+      .f = function(x) {
         x |> 
           pull(total_cases) |> 
-          max(na.rm = TRUE)}
+          max(na.rm = TRUE)
+      }
     ),
     min_total_cases = map_dbl(
       .x = data, 
-      .f = function(x){
+      .f = function(x) {
         x |> 
           pull(total_cases) |> 
-          min(na.rm = TRUE)}
+          min(na.rm = TRUE)
+      }
     )
   )
 ```
@@ -958,13 +1006,13 @@ cpi_tbl |>
   ) |> 
   ggplot() + 
   geom_line(aes(x = date, y = value)) +
+  scale_x_date(date_breaks = '1 year', date_labels = '%Y') +
+  scale_y_continuous(breaks = seq(-1, 1.5, 0.25), limits = c(-1,1.5)) +
   labs(
     title = 'US CPI showing an upward trend as of 2021',
     x     = 'Date',
     y     = 'US Monthly CPI (%)'
-  ) +
-  scale_x_date(date_breaks = '1 year', date_labels = '%Y') +
-  scale_y_continuous(breaks = seq(-1, 1.5, 0.25), limits = c(-1,1.5))
+  )
 ```
 
 Finally, we might be interested in adding a feature to the plot to highlight the upward trend in CPI starting in 2021. Either the 12-month accumulated CPI or the 3-month accumulated seasonally adjusted CPI would be common choices for this task, and we'll see examples of how to perform this kind of computation later. For now, just to keep things simple, we'll use the average CPI from 2010 to 2019 (the pre-COVID period) as a measure of "normal" CPI.
@@ -972,21 +1020,21 @@ Finally, we might be interested in adding a feature to the plot to highlight the
 ```{r}
 cpi_tbl |>
   mutate(
-    date = ymd(date),
+    date  = ymd(date),
     value = as.numeric(value)
   ) |> 
   mutate(value_avg = mean(value[which(year(date) %in% 2010:2019)])) |> 
   ggplot() + 
   geom_line(aes(x = date, y = value)) +
   geom_line(aes(x = date, y = value_avg), color = 'red', lwd = 1) +
+  scale_x_date(date_breaks = '1 year', date_labels = '%Y') +
+  scale_y_continuous(breaks = seq(-1, 1, 0.25)) +
   labs(
     title    = 'US CPI showing an upward trend as of 2021',
     subtitle = 'Red line is the 2010-2019 average',
     x        = 'Date',
     y        = 'US Monthly CPI (%)'
-  ) +
-  scale_x_date(date_breaks = '1 year', date_labels = '%Y') +
-  scale_y_continuous(breaks = seq(-1, 1, 0.25))
+  )
 ```
 
 Since the parameter `x = date` appears in both `geom_line` layers, we can make the code more compact by moving this parameter into the `ggplot()` function. All parameters inside `ggplot()` are carried forward to every subsequent layer. This saves a lot of effort when adding multiple `geom_*` layers to a graphic with fixed features. In this case, `x` will always be the date variable, regardless of any layer we add to the plot.
@@ -1002,14 +1050,14 @@ cpi_tbl |>
   ggplot(aes(x = date)) + 
   geom_line(aes(y = value)) +
   geom_line(aes(y = value_avg), color = 'red', lwd = 1) +
+  scale_x_date(date_breaks = '1 year', date_labels = '%Y') +
+  scale_y_continuous(breaks = seq(-1, 1.5, 0.25), limits = c(-1, 1.5)) +
   labs(
     title    = 'US CPI showing an upward trend as of 2021',
     subtitle = 'Red line is the 2010-2019 average',
     x        = 'Date',
     y        = 'US Monthly CPI (%)'
-  ) +
-  scale_x_date(date_breaks = '1 year', date_labels = '%Y') +
-  scale_y_continuous(breaks = seq(-1, 1.5, 0.25), limits = c(-1, 1.5))
+  )
 ```
 
 You may be wondering why the `x` and `y` parameters go inside the `aes` function, whereas `color` appears outside of it. First of all, the parameters that define the axes of the graphic always go inside `aes`. Other parameters behave differently depending on whether they are placed inside or outside `aes`. According to the documentation, *aesthetic mappings describe how variables in the data are mapped to visual properties (aesthetics) of geoms*. It's much easier to understand through an example.
@@ -1027,13 +1075,13 @@ cpi_tbl |>
   ) |>
   ggplot() + 
   geom_line(aes(x = date, y = value, color = covid), lwd = 1) +
+  scale_x_date(date_breaks = '1 year', date_labels = '%Y') +
+  scale_y_continuous(breaks = seq(-1, 1.5, 0.25), limits = c(-1, 1.5)) +
   labs(
     title    = 'US CPI showing an upward trend as of 2021',
     x        = 'Date',
     y        = 'US Monthly CPI (%)'
-  ) +
-  scale_x_date(date_breaks = '1 year', date_labels = '%Y') +
-  scale_y_continuous(breaks = seq(-1, 1.5, 0.25), limits = c(-1, 1.5))
+  )
 ```
 
 Note that `ggplot` automatically assigns colors to attributes and adds a legend. So, we might be interested in customizing both the attribute colors and the legend position. Again, this can be achieved by adding two specific layers. The logic remains the same: **parameters inside `aes` turn a variable into an attribute, which can then be customized using specific layers**.
@@ -1047,14 +1095,15 @@ cpi_tbl |>
   ) |> 
   ggplot() + 
   geom_line(aes(x = date, y = value, color = covid), lwd = 1) +
-  labs(
-    title    = 'US CPI showing an upward trend as of 2021',
-    x        = 'Date',
-    y        = 'US Monthly CPI (%)') +
   scale_x_date(date_breaks = '1 year', date_labels = '%Y') +
   scale_y_continuous(breaks = seq(-1, 1.5, 0.25), limits = c(-1, 1.5)) +
   scale_color_manual(values = c('darkgreen', 'orange')) +
-  theme(legend.position = 'top')
+  theme(legend.position = 'top') +
+  labs(
+    title    = 'US CPI showing an upward trend as of 2021',
+    x        = 'Date',
+    y        = 'US Monthly CPI (%)'
+  )
 ```
 
 As a final example, we'll see how to build a scatter plot and explore some additional features of `ggplot`. Scatter plots are typically used to highlight the relationship between two variables at a given point in time. For this task, let's use the COVID dataset once again. We'll first filter the data to a specific date -- say, '2021-07-31'. Next, we'll plot `people_fully_vaccinated_per_hundred` on the x-axis and `new_deaths_smoothed_per_million` on the y-axis.[^introduction-3]
@@ -1062,6 +1111,8 @@ As a final example, we'll see how to build a scatter plot and explore some addit
 [^introduction-3]: Be aware that we're not trying to establish a causal relationship, nor to find a threshold for vaccination above which people are safe. We must be cautious when interpreting this graphic, as omitted variables -- such as age and prior exposure to the virus -- may influence the outcome.
 
 ```{r}
+#| warning: false
+#| message: false
 covid_data |> 
   filter(date == '2021-07-31') |> 
   ggplot() +
@@ -1080,6 +1131,8 @@ We'll stick with ColorBrewer, as it makes it effortless to assign a different co
 In addition, we'll use `theme_light()` to make our plot cleaner. Essentially, a theme is a set of predefined visual features for a graph. You can explore other built-in themes as well, including `theme_dark()`, `theme_minimal()`, `theme_classic()`, and so on.
 
 ```{r}
+#| warning: false
+#| message: false
 covid_data |> 
   filter(
     date == '2021-07-31',
@@ -1094,9 +1147,11 @@ covid_data |>
     ),
     size = 3
   ) +
-  labs(title = 'New deaths in late July were above 5 per million people in countries where \n vaccination falls below 30% of population') +
   scale_color_brewer(type = 'qual', palette = 2) +
-  theme_light()
+  theme_light() +
+  labs(
+    title = 'New deaths in late July were above 5 per million people in countries where \n vaccination falls below 30% of population'
+  )
 ```
 
 To finish, instead of showing all the continents in a single plot, we could separate them into multiple panels using `facet_wrap`. This feature is especially useful when the range of values across groups differs greatly in magnitude.
@@ -1117,11 +1172,11 @@ covid_data |>
     ),
     size = 3
   ) +
+  theme_light() +
+  facet_wrap(~ continent) +
   labs(
     title = 'New deaths in late July were above 5 per million people in countries where \n vaccination falls below 30% of population'
-  ) +
-  theme_light() +
-  facet_wrap(~ continent)
+  )
 ```
 
 Since we have a separate panel for each continent, it's no longer necessary to assign a different color to each of them. As you go through the next chapters, you'll see more plotting features and tips on how to improve data visualization.
@@ -1158,9 +1213,8 @@ us_gdp_gt <- us_gdp |>
   mutate(Quarter = zoo::as.yearqtr(Quarter)) |> 
   filter(Quarter >= '2021 Q1') |>
   pivot_wider(names_from = Quarter, values_from = value) |> 
-  gt(
-    rowname_col = "var"
-  )
+  gt(rowname_col = "var")
+
 us_gdp_gt
 ```
 
@@ -1175,6 +1229,7 @@ us_gdp_gt <- us_gdp_gt |>
   tab_source_note(
     source_note = "Source: U.S Bureau of Economic Analysis (BEA)"
   )
+
 us_gdp_gt
 ```
 
@@ -1186,6 +1241,7 @@ us_gdp_gt <- us_gdp_gt |>
     columns = -var,
     delim = ' ' 
   )
+
 us_gdp_gt
 ```
 

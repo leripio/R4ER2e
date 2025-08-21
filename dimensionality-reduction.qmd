@@ -65,6 +65,7 @@ perfume_prices_cpi_br_scaled <- perfume_prices_cpi_br |>
 ```{r}
 #| echo: false
 set.seed(1)
+
 perfume_prices_cpi_br_scaled |> 
   pivot_longer(
     cols = starts_with('product'), 
@@ -149,7 +150,6 @@ perfume_prices_pca_df |>
     x = '',
     y = ''
   )
-
 ```
 
 At first glance, the plot might seem a bit confusing, but a closer examination reveals important patterns. For instance, PC1 appears to correlate with the target variable, albeit in the opposite direction, and the same seems to hold for PC3. This is not necessarily a concern, as we are now analyzing factors that summarize variability in the data rather than raw prices. To gain a clearer sense of the correlation, we can invert the factors.
@@ -172,7 +172,6 @@ perfume_prices_pca_df |>
     x = '',
     y = ''
   )
-
 ```
 
 Additionally, PC2 -- and especially PC4 -- exhibit a similar pattern of high volatility in the initial part of the sample, followed by lower volatility toward the end. However, PC2 diverges significantly from the target series toward the end of the sample, raising concerns about its alignment with future values. This warrants caution in its interpretation.
@@ -187,7 +186,6 @@ perfume_prices_ols_fit <- lm(cpi_perfume ~ PC1 + PC2 + PC3 + PC4, perfume_prices
 
 perfume_prices_ols_fit |> summary()
 perfume_prices_ols_fit |> forecast::checkresiduals()
-
 ```
 
 The initial results confirm our expectations: PC1 and PC3 both have negative signs, as does PC4. As noted earlier, this is not a cause for concern. PC2, however, is not statistically significant, and its divergence from the target variable toward the end of the sample raises further doubts about its reliability. Given this, it would be safer to exclude it from the model.
@@ -256,10 +254,12 @@ The second step is to determine the value of the regularization parameter, $\lam
 The function `cv.glmnet` performs the k-fold cross validation, and contains a `plot` to produce a visual representation of the results.
 
 ```{r}
+#| message: false
+#| warning: false
 library(glmnet)
 set.seed(1)
 
-target <- perfume_prices_cpi_br_scaled |> pull(cpi_perfume)
+target    <- perfume_prices_cpi_br_scaled |> pull(cpi_perfume)
 lambda_cv <- glmnet::cv.glmnet(x = perfume_prices_matrix, y = target)
 
 lambda_cv

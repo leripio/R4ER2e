@@ -35,7 +35,9 @@ We'll start by building skewed distributions for both CPI and GDP using the `sn`
 #| warning: false
 library(tidyverse)
 library(sn)
+
 set.seed(123)
+
 sn_parameters <- map(
   .x = list(
     "CPI" = c(mean = 2.0, s.d. = 0.4, gamma = 0.8),
@@ -45,12 +47,15 @@ sn_parameters <- map(
 )
 # Number of simulations
 n_sim <- 1000
+
 variables_sim <- tibble(
   CPI  = rsn(n_sim, dp = sn_parameters[['CPI']]),
   GDP  = rsn(n_sim, dp = sn_parameters[['GDP']]),
-  IR   = sample(c(3.0, 4.0),  n_sim, 
-                prob = c(0.40, 0.60), 
-                replace = TRUE
+  IR   = sample(
+    c(3.0, 4.0),  
+    n_sim, 
+    prob = c(0.40, 0.60), 
+    replace = TRUE
   )
 )
 ```
@@ -84,6 +89,7 @@ Next, we'll use the `cross()` function from the `purrr` package to generate all 
 #| eval: true
 # Set eval: true if you don't have enough memory to run this exercise using the full sample
 set.seed(1) 
+
 variables_sim <- variables_sim |> 
   slice_sample(prop = 0.1)
 ```
@@ -112,10 +118,10 @@ debt2gdp_sim <- map_dbl(
     IR   <- x[3]
     r    <- IR - CPI
     b0   <- 60.0
-    b1   <- (r - GDP)*(b0/100)
-    return(b1)
+    b1   <- (r - GDP) * (b0 / 100)
   }
 )
+
 summary(debt2gdp_sim)
 ```
 
@@ -127,9 +133,14 @@ We can examine some key statistics of the resulting distribution using the `summ
 tibble(b1 = debt2gdp_sim) |> 
   ggplot(aes(x = b1)) +
   geom_histogram(fill = "steelblue3") +
-  labs(title = "Debt-to-GDP variation for the next period (p.p)",
-       y = "Frequency", x = "Variation (p.p)") +
-  theme(axis.text = element_text(size = 12),
-        title = element_text(size = 12)) +
+  labs(
+    title = "Debt-to-GDP variation for the next period (p.p)",
+    y = "Frequency", 
+    x = "Variation (p.p)"
+  ) +
+  theme(
+    axis.text = element_text(size = 12),
+    title = element_text(size = 12)
+  ) +
   theme_light()
 ```

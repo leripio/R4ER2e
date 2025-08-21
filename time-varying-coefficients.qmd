@@ -31,7 +31,7 @@ $$
 w_t \sim N(0, Q)
 $$
 
-For this exercise, we'll use the CPI in Brazil excluding regulated prices such as public transport, energy, and others. After importing the series from the Brazilian Central Bank API with the `rbcb` package, we'll compute the seasonally adjusted series from the original data with the `seasonal` package (see the section on Seasonal Adjustment for details).
+For this exercise, we'll use the CPI in Brazil excluding regulated prices such as public transport, energy, and others. After importing the series, we'll compute the seasonally adjusted series from the original data with the `seasonal` package (see the section on Seasonal Adjustment for details).
 
 ::: {.callout-tip}
 ## Data
@@ -40,19 +40,19 @@ The data set containing the CPI in Brazil excluding regulated prices is availabl
 
 ```{r}
 #| warning: false
+#| message: false
 library(tidyverse)
-library(rbcb)
 library(seasonal)
 library(timetk)
-cpi_br <- get_series(
-  code = 11428,
-  start_date = "2004-01-01",
-  end_date = "2022-12-01",
-  as = "ts"
-)
-cpi_br_sa <- final(seas(cpi_br))
+
+cpi_br <- R4ER2data::cpi_br
+
+cpi_br_ts <- ts(cpi_br$cpi, start = c(2004, 1), freq = 12)
+
+cpi_br_sa <- final(seas(cpi_br_ts))
+
 cpi_br_df <- tibble(
-  date = tk_tbl(cpi_br) |> pull(index),
+  date = tk_tbl(cpi_br_ts) |> pull(index),
   cpi_sa = c(cpi_br_sa)
 ) |> 
   mutate(
@@ -85,6 +85,7 @@ library(MARSS)
 t         <- nrow(cpi_br_df)
 y         <- matrix(cpi_br_df$cpi_sa, nrow = 1) 
 y_lagged  <- matrix(cpi_br_df$cpi_sa_lagged, nrow = 1)
+
 # Model specification
 B         <- diag(2)
 Q         <- matrix(list(0,0,0,"sigma.ar1"), 2, 2)
@@ -96,6 +97,7 @@ A         <- matrix(0)
 x0        <- list(x0 = matrix(0, nrow = 2)) # initial values
 ss_terms  <- list(B = B, Q = Q, Z = Z, A = A, R = R)
 ss_fit    <- MARSS(y, inits = x0, model = ss_terms, silent = TRUE)
+
 # Use the Kalman Filter and Smoother
 ss_fit_kf <- MARSSkfss(ss_fit)  
 ```
@@ -118,7 +120,7 @@ out_tidy <- cpi_br_df |>
     coef.ar1.se   = ar1_fit$var.coef["ar1", "ar1"] |> sqrt(),
     coef.ar1.low  = coef.ar1 - 1.96*coef.ar1.se,
     coef.ar1.high = coef.ar1 + 1.96*coef.ar1.se
-    )
+  )
 ```
 
 ```{r}
@@ -140,7 +142,7 @@ out_tidy |>
     subtitle = 'Smoothed values',
     x = "", 
     y = ""
-    )
+  )
 ```
 
 For most of the period, we can't say the time-varying coefficient is statistically different from the static one. However, the value of this approach lies precisely in the timeliness with which it detects variations in the relationship of interest. Since the prevailing relationship was re-established not so long after the deviation was large enough to exceed the confidence bands, it's very likely that this behavior would go unnoticed in the standard approach.
@@ -183,5 +185,5 @@ out_filtered_tidy |>
     subtitle = 'Filtered values',
     x = "", 
     y = ""
-    )
+  )
 ```

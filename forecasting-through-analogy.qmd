@@ -26,12 +26,13 @@ The data set containing confirmed cases of COVID-19 is available in the `R4ER2da
 #| warning: false
 library(tidyverse)
 covid_confirmed <- R4ER2data::covid_cases
+
 covid_cumulative <- covid_confirmed |>
   filter(type == "confirmed") |>
   group_by(Country.Region) |>
   mutate(
     acum_cases = cumsum(cases),
-    r = ((acum_cases/lag(acum_cases))-1)*100
+    r = ((acum_cases / lag(acum_cases)) - 1) * 100
   ) |>
   filter(acum_cases >= 100) |>
   mutate(t = 1:n()) |>
@@ -42,8 +43,9 @@ covid_cumulative <- covid_confirmed |>
 #| warning: false
 library(gghighlight)
 countries_out <- c("Qatar", "Pakistan", "Dominican_Republic")
+
 covid_cumulative |>
-  dplyr::filter(
+  filter(
     !Country.Region %in% countries_out,
     t <= 50,
     date <= '2020-03-17'
@@ -80,12 +82,13 @@ The OLS estimate for this equation is shown below.
 #| results: asis
 #| warning: false
 data_reg <- covid_cumulative |>
-  dplyr::filter(
+  filter(
     Country.Region %in% c("Italy", "Iran")
   ) |>
   plyr::dlply(.variables = "Country.Region")
-mod_eq <- 'log(r) ~ t' |> as.formula()
-fit_reg <- map(.x = data_reg, .f = ~ lm(mod_eq, data = .x))
+
+mod_eq  <- 'log(r) ~ t' |> as.formula()
+fit_reg <- map(.x = data_reg, .f = function(x) lm(mod_eq, data = x))
 ```
 
 ```{r}
@@ -113,42 +116,43 @@ Suppose we are on March 16 -- the third day after Brazil exceeded 100 confirmed 
 For example, to produce the *Italy-like* path on March 16, we first take the (exponential of the) fitted values from the Italy model.
 
 ```{r}
-1 + exp(fitted(fit_reg$Italy))/100
+1 + exp(fitted(fit_reg$Italy)) / 100
 ```
 
 Then, we multiply the initial value -- the number of cases on March 16 -- by the cumulative product of $\hat{r}_{it}$ starting from $t = 4$. Note that we could produce forecasts for the next 55 days, since Italy was at day 55 after the 100th confirmed case.
 
 Also, we could generate a new forecast path each day by updating the actual value for $C$. This would certainly improve accuracy, since we would avoid carrying forward errors from early predictions for $t = 2, 3,..., T$. However, to keep the exercise simple, let's assume a single forecast path entirely based on $C_3 = 235$.
 
--   March 17: $235 \times 1.44 = `r round(235*1.44,0)`$
--   March 18: $235 \times 1.44 \times 1.41 = `r round(235*1.44*1.41,0)`$
--   March 19: $235 \times 1.44 \times 1.41 \times 1.39 = `r round(235*1.44*1.41*1.39,0)`$
+-   March 17: $235 \times 1.44 = `r round(235 * 1.44, 0)`$
+-   March 18: $235 \times 1.44 \times 1.41 = `r round(235 * 1.44 * 1.41, 0)`$
+-   March 19: $235 \times 1.44 \times 1.41 \times 1.39 = `r round(235 * 1.44 * 1.41 * 1.39, 0)`$
 
 We can avoid manual calculations by creating a function that takes these arguments -- $C$, $t$, and the regression model -- and returns the estimated number of total cases at time $t+k$.
 
 ```{r}
-covid_fc <- function(model, C, t){
+covid_fc <- function(model, C, t) {
   mod_fitted <- fitted(model)
-  r_t        <- 1+exp(mod_fitted)/100 
-  r_t_cum    <- r_t[t:length(r_t)] |>  cumprod()
-  out <- round(C*r_t_cum, 0)
-  return(out)
+  r_t        <- 1 + exp(mod_fitted) / 100 
+  r_t_cum    <- r_t[t:length(r_t)] |> cumprod()
+  out <- round(C * r_t_cum, 0)
 }
+
 covid_fc(fit_reg$Italy, 235, 4)
 ```
 
 Since our models are stored in a list object, we can use the `map` function to compute the results for both models in a single call.
 
 ```{r}
-covid_br_fc <- 
-  map(
-    .x = fit_reg,
-    .f = ~ covid_fc(.x, 235, 4) |> 
+covid_br_fc <- map(
+  .x = fit_reg,
+  .f = function(x) {
+    covid_fc(x, 235, 4) |> 
       as.data.frame() |> 
       tibble::rownames_to_column() |> 
       magrittr::set_colnames(c('t', 'forecast')) |> 
       mutate(t = as.numeric(t))
-  ) |> 
+  }
+) |> 
   plyr::ldply(.id = 'country') |> 
   pivot_wider(names_from = 'country', values_from = 'forecast')
 ```
@@ -162,6 +166,7 @@ data_plot <- covid_cumulative |>
   select(date, t, observed = acum_cases) |>
   left_join(covid_br_fc) |> 
   select(-t)
+
 data_plot |> 
   filter(date <= '2020-04-01' & date >= '2020-03-17') |> 
   pivot_longer(cols = -c('date'), names_to = 'var', values_to = 'value') |> 
@@ -175,9 +180,11 @@ data_plot |>
     axis.text = element_text(size = 13),
     legend.text = element_text(size = 13)
   ) +
-  labs(title = 'Covid total cases in Brazil - Observed vs. Forecasts',
-       subtitle = 'Estimated on March 16',
-       x = '', y = 'Total Cases', color = '') 
+  labs(
+    title = 'Covid total cases in Brazil - Observed vs. Forecasts',
+    subtitle = 'Estimated on March 16',
+    x = '', y = 'Total Cases', color = ''
+  ) 
 ```
 
 The actual values for Brazil were very close to those recorded by the two countries in the short term, and lay between the two curves in the medium term -- even though I haven't updated the forecasts here, which I did at the time. This result shows how simple exercises can play a significant role in real-world situations. In fact, we successfully relied on this strategy for a couple of months. At the time, both models produced good one- to seven-step-ahead forecasts from the beginning. For longer horizons, the Iran-like model maintained fairly stable accuracy, while the Italy-like model surprisingly improved over time.
@@ -195,6 +202,7 @@ However, looking at the plot below, we can see that a large number of peaks occu
 ```{r}
 #| warning: false
 covid_data <- R4ER2data::owid_covid
+
 covid_data |> 
   filter(date <= '2021-05-01') |> 
   ggplot(aes(x = date)) +
@@ -209,9 +217,11 @@ covid_data |>
     xmax = as.Date('2021-03-01'),
     ymin = -Inf, ymax = Inf,
     alpha = .2) +
-  labs(title = 'Covid New Cases (smoothed) by country',
-       subtitle = 'Shaded Area = assumed 2nd wave',
-       x = '', y = 'Covid New Cases (smoothed)')
+  labs(
+    title = 'Covid New Cases (smoothed) by country',
+    subtitle = 'Shaded Area = assumed 2nd wave',
+    x = '', y = 'Covid New Cases (smoothed)'
+  )
 ```
 
 The idea I came up with was to zoom in on this period and compute the typical behavior of new cases around the peak. First, I filtered the November 2020 - March 2021 period, excluding Brazil from the dataset. Next, I created a variable called `peak_date`, defined as the earliest date on which each country recorded its maximum number of new cases during the period. I also created the variable `t_around_peak`, which counts the number of days before and after the peak date.

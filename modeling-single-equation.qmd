@@ -40,8 +40,8 @@ Let's start by importing the dataset and visualizing the variables of interest.
 ```{r}
 #| warning: false
 library(tidyverse)
-library(lubridate)
 cp_data <- R4ER2data::br_economy_model 
+
 cp_data |> 
   select(date, CPI_CORE, CPI_EXP, YGAP, CI_USD) |> 
   pivot_longer(-date, names_to = 'var', values_to = 'value') |> 
@@ -67,9 +67,11 @@ cp_reg_data <- cp_data |>
   mutate(
     CPI_CORE_lag = dplyr::lag(CPI_CORE, 1),
     YGAP_lag     = dplyr::lag(YGAP, 1),
-    dlog_CI_USD  = log(CI_USD/dplyr::lag(CI_USD))*100
+    dlog_CI_USD  = log(CI_USD / dplyr::lag(CI_USD)) * 100
   )
+
 cp_fit <- lm(CPI_CORE ~ CPI_CORE_lag + CPI_EXP + YGAP_lag + dlog_CI_USD -1, cp_reg_data)
+
 summary(cp_fit)
 ```
 
@@ -161,10 +163,10 @@ Naturally, the model can also be used to generate forecasts. To do so, we need t
 set.seed(123)
 new_values <- tibble(
   CPI_CORE_lag = last(cp_reg_data$CPI_CORE),
-  CPI_EXP      = last(cp_reg_data$CPI_EXP)+rnorm(1),
-  YGAP_lag     = last(cp_reg_data$YGAP)+rnorm(1),
-  dlog_CI_USD  = last(cp_reg_data$dlog_CI_USD)+rnorm(1)
+  CPI_EXP      = last(cp_reg_data$CPI_EXP) + rnorm(1),
+  YGAP_lag     = last(cp_reg_data$YGAP) + rnorm(1),
+  dlog_CI_USD  = last(cp_reg_data$dlog_CI_USD) + rnorm(1)
 )
-predict(cp_fit, new_values)
 
+predict(cp_fit, new_values)
 ```

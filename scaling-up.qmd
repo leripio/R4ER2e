@@ -33,14 +33,15 @@ library(glue)
 countries_codes  <- c('BR', 'US', 'DE', 'ZA', 'SG', 'AU')
 years            <- seq(from = 2020, 
                         to = year(Sys.Date()), 
-                        by = 1
-)
-google_filenames <- 
-  cross2(years, countries_codes) |> 
+                        by = 1)
+
+google_filenames <- cross2(years, countries_codes) |> 
   map_chr(
-    .f = ~ .x |> 
-      glue_collapse(sep = '_') |>
-      glue('_Region_Mobility_Report.csv')
+    .f = function(x) {
+      x |> 
+        glue_collapse(sep = '_') |>
+        glue('_Region_Mobility_Report.csv')
+    }
   )
 ```
 
@@ -70,20 +71,16 @@ In this example, the file names contain both the country code and year for each 
 ```{r}
 #| warning: false
 #| message: false
-library(plyr)
 library(magrittr)
-mobility_data <- 
-  map(
-    .x = google_filenames, 
-    .f = possibly(
-      ~ read_csv(unz('data/Region_Mobility_Report_CSVs.zip', .x)),
-      otherwise = NULL
-    )
-  ) |> 
-  set_names(str_sub(
-    google_filenames, start = 1, end = 7)
-  ) |> 
-  ldply(.id = 'year_country')
+mobility_data <- map(
+  .x = google_filenames, 
+  .f = possibly(
+    function(x) read_csv(unz('data/Region_Mobility_Report_CSVs.zip', x)),
+    otherwise = NULL
+  )
+) |> 
+  set_names(str_sub(google_filenames, start = 1, end = 7)) |> 
+  plyr::ldply(.id = 'year_country')
 ```
 
 ## Preparing the data
@@ -148,16 +145,16 @@ mutate_try2 <- mobility_data |>
   arrange(date) |> 
   mutate(
     across(retail_and_recreation_percent_change_from_baseline, ~ roll_meanr(.x, 7)),
-    across(grocery_and_pharmacy_percent_change_from_baseline, ~ roll_meanr(.x, 7)),
-    across(parks_percent_change_from_baseline, ~ roll_meanr(.x, 7)),
-    across(transit_stations_percent_change_from_baseline, ~ roll_meanr(.x, 7)),
-    across(workplaces_percent_change_from_baseline, ~ roll_meanr(.x, 7)),
-    across(residential_percent_change_from_baseline, ~ roll_meanr(.x, 7))
+    across(grocery_and_pharmacy_percent_change_from_baseline,  ~ roll_meanr(.x, 7)),
+    across(parks_percent_change_from_baseline,                 ~ roll_meanr(.x, 7)),
+    across(transit_stations_percent_change_from_baseline,      ~ roll_meanr(.x, 7)),
+    across(workplaces_percent_change_from_baseline,            ~ roll_meanr(.x, 7)),
+    across(residential_percent_change_from_baseline,           ~ roll_meanr(.x, 7))
   ) |> 
   ungroup()
 ```
 
-Ok, we've made some progress in cutting down part of the repetition, but we can certainly do better. Note that the variables we are interested in follow a clear pattern: they all end with **percent_change_from_baseline**, or simply **baseline**. We can take advantage of this to further improve our solution using **select helpers** -- expressions that allow us to refer to specific patterns in column names. For instance, we could use the select helper `ends_with` to create the 7-day rolling mean for all variables ending with **baseline**.
+OK, we've made some progress in cutting down part of the repetition, but we can certainly do better. Note that the variables we are interested in follow a clear pattern: they all end with **percent_change_from_baseline**, or simply **baseline**. We can take advantage of this to further improve our solution using **select helpers** -- expressions that allow us to refer to specific patterns in column names. For instance, we could use the select helper `ends_with` to create the 7-day rolling mean for all variables ending with **baseline**.
 
 In addition, we can use the `.names` argument to assign a `glue`-style name to the new variables: `{.col}` refers to the original column name, and `{.fun}` to the name of the function. This is great for identifying which function was applied to each variable. In this case, we can use a **ma7d** suffix, which stands for *moving-average 7-days*.
 
@@ -169,7 +166,12 @@ library(RcppRoll)
 mutate_topsolution <- mobility_data |> 
   group_by(country_region) |> 
   arrange(date) |> 
-  mutate(across(ends_with('baseline'), ~ roll_meanr(.x, na.rm = TRUE), .names = '{.col}_ma7d')) |> 
+  mutate(
+    across(
+      ends_with('baseline'), 
+      ~ roll_meanr(.x, na.rm = TRUE), .names = '{.col}_ma7d'
+    )
+  ) |> 
   ungroup()
 ```
 
@@ -185,16 +187,16 @@ Below is the full solution for Items 1 to 5.
 library(RcppRoll)
 
 mobility_final <- mobility_data |> 
-  dplyr::filter(is.na(sub_region_1)) |>
-  dplyr::mutate(across(starts_with('residential'), ~ -1*.x)) |>
-  dplyr::group_by(country_region) |>
-  dplyr::arrange(date) |> 
-  dplyr::mutate(across(ends_with('baseline'), ~ roll_meanr(.x, 7, na.rm = TRUE), .names = '{.col}_ma7d')) |>
-  dplyr::ungroup() |> 
-  dplyr::rowwise() |> 
-  dplyr::mutate(avg_mobility = mean(c_across(ends_with('ma7d')), na.rm = TRUE)) |>
-  dplyr::ungroup() |> 
-  dplyr::select(date, country_region, ends_with('ma7d'), avg_mobility) 
+  filter(is.na(sub_region_1)) |>
+  mutate(across(starts_with('residential'), ~ -1*.x)) |>
+  group_by(country_region) |>
+  arrange(date) |> 
+  mutate(across(ends_with('baseline'), ~ roll_meanr(.x, 7, na.rm = TRUE), .names = '{.col}_ma7d')) |>
+  ungroup() |> 
+  rowwise() |> 
+  mutate(avg_mobility = mean(c_across(ends_with('ma7d')), na.rm = TRUE)) |>
+  ungroup() |> 
+  select(date, country_region, ends_with('ma7d'), avg_mobility) 
 ```
 
 ## Plot information
@@ -209,11 +211,13 @@ mobility_final |>
   ggplot(aes(x = date, y = avg_mobility)) +
   geom_line() +
   facet_wrap(~ country_region) +
-  labs(title = 'Average mobility in selected countries - % change from baseline',
-       subtitle = '7-days moving average',
-       x = '',
-       y = 'Average mobility (% change from baseline)',
-       caption = 'Data source: Google') +
+  labs(
+    title = 'Average mobility in selected countries - % change from baseline',
+    subtitle = '7-days moving average',
+    x = '',
+    y = 'Average mobility (% change from baseline)',
+    caption = 'Data source: Google'
+  ) +
   geom_hline(yintercept = 0, linetype = 2) +
   theme_light()
 ```
@@ -235,51 +239,71 @@ Another minor, yet important, issue is that when writing a function, we need to 
 ```{r}
 #| message: false
 #| warning: false
-plot_mobility <- function(country_code, start_date, end_date, ma_window){
+plot_mobility <- function(
+    country_code, 
+    start_date, 
+    end_date, 
+    ma_window
+) {
   library(lubridate)
   library(tidyverse)  
   library(glue)
   # Import data
   countries_codes <- country_code
-  years <- seq(from = 2020,
-               to   = year(Sys.Date()), 
-               by   = 1)
-  google_filenames <- 
-    cross2(years, countries_codes) |> 
+  years <- seq(from = 2020, to = year(Sys.Date()), by = 1)
+  
+  google_filenames <- cross2(years, countries_codes) |> 
     map_chr(
-      .f = ~ .x |> 
-        glue_collapse(sep = '_') |>
-        glue('_Region_Mobility_Report.csv')
+      .f = function(x) {
+        x |> 
+          glue_collapse(sep = '_') |>
+          glue('_Region_Mobility_Report.csv')
+      }
     )
-  mobility_data <- 
-    map_dfr(
-      .x = google_filenames, 
-      .f = possibly(
-        ~ readr::read_csv(unz('data/Region_Mobility_Report_CSVs.zip', .x)),
-        otherwise = NULL
-      )
+  
+  mobility_data <- map_dfr(
+    .x = google_filenames, 
+    .f = possibly(
+      function(x) readr::read_csv(unz('data/Region_Mobility_Report_CSVs.zip', x)),
+      otherwise = NULL
     )
+  )
   # Prepare data
   mobility_prep <- mobility_data |> 
-    dplyr::filter(is.na(sub_region_1)) |>
-    dplyr::mutate(across(starts_with('residential'), ~ -1*.x)) |>
-    dplyr::group_by(country_region) |>
-    dplyr::arrange(date) |> 
-    dplyr::mutate(across(ends_with('baseline'), ~ roll_meanr(.x, ma_window, na.rm = TRUE), .names = '{.col}_ma{ma_window}d')) |>
-    dplyr::ungroup() |> 
-    dplyr::rowwise() |> 
-    dplyr::mutate(avg_mobility = mean(c_across(ends_with(glue('ma{ma_window}d'))), na.rm = TRUE)) |>
-    dplyr::ungroup() |> 
-    dplyr::select(date, country_region, ends_with('baseline'), avg_mobility) 
+    filter(is.na(sub_region_1)) |>
+    mutate(across(starts_with('residential'), ~ -1 * .x)) |>
+    group_by(country_region) |>
+    arrange(date) |> 
+    mutate(
+      across(
+        ends_with('baseline'), 
+        ~ roll_meanr(.x, ma_window, na.rm = TRUE), 
+        .names = '{.col}_ma{ma_window}d'
+      )
+    ) |>
+    ungroup() |> 
+    rowwise() |> 
+    mutate(
+      avg_mobility = mean(
+        c_across(
+          ends_with(
+            glue('ma{ma_window}d')
+          )
+        ), 
+        na.rm = TRUE
+      )
+    ) |>
+    ungroup() |> 
+    select(date, country_region, ends_with('baseline'), avg_mobility) 
   # Output: plot
   mobility_prep |> 
-    dplyr::filter(between(date, ymd(start_date), ymd(end_date))) |> 
+    filter(between(date, ymd(start_date), ymd(end_date))) |> 
     ggplot(aes(x = date, y = avg_mobility)) +
     geom_line() +
     labs(
-      title = glue('Average mobility in {country_code} - % change from baseline'),
+      title    = glue('Average mobility in {country_code} - % change from baseline'),
       subtitle = glue('{ma_window}-days moving average'),
-      caption = 'Data source: Google'
+      caption  = 'Data source: Google'
     ) +
     geom_hline(yintercept = 0, linetype = 2) +
     theme_light()
@@ -311,6 +335,7 @@ mobility_countries <- map(
   14
 ) |> 
   set_names(countries)
+
 mobility_countries[[1]] / mobility_countries[[2]]
 ```
 

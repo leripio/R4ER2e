@@ -17,6 +17,7 @@ library(R4ER2data)
 library(tidyverse)
 
 credit_card_br <- R4ER2data::credit_card_br
+
 credit_card_br |> glimpse()
 ```
 
@@ -28,7 +29,7 @@ credit_card_br |>
   ggplot() +
   geom_line(aes(x = date, y = goods), lwd = 1) +
   labs(
-    title = 'Credit card transactions for goods',
+    title    = 'Credit card transactions for goods',
     subtitle = 'Index (2018 = 100). Current prices (BRL).'
   )
 ```
@@ -41,7 +42,7 @@ credit_card_br |>
   ggplot() +
   geom_line(aes(x = date, y = goods), lwd = 1) +
   labs(
-    title = 'Credit card transactions for goods',
+    title    = 'Credit card transactions for goods',
     subtitle = 'Index (2018 = 100). Current prices (BRL).'
   )
 ```
@@ -70,10 +71,12 @@ library(lubridate)
 special_events <- tibble(
   ds = map_chr(
     .x = 2018:2023,
-    .f = ~ tis::holidays(.x)['Thanksgiving'] |> 
-      ymd() %m+% 
-      days(1) |> 
-      as.character()
+    .f = function(x) {
+      tis::holidays(x)['Thanksgiving'] |> 
+        ymd() %m+% 
+        days(1) |> 
+        as.character()
+    }
   ),
   holiday = 'Black Friday'
 ) 
@@ -146,7 +149,6 @@ goods_df_sa |>
     subtitle = 'Index (2018 = 100). Current prices (BRL).',
     color = ''
   )
-
 ```
 
 The plot above shows that we were able to eliminate the largest regularly spaced peaks and troughs, although some residual seasonality might still be present in the data. From this point onward, it's a matter of addressing the remaining holidays and special events that might still affect the model estimates until we feel comfortable with the result.

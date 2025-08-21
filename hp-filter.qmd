@@ -4,7 +4,7 @@ In many economic applications, it is necessary to decompose a time series into t
 
 There are several statistical filters that perform this task, the best known being the Hodrick-Prescott filter. The HP filter requires only a single parameter, $\lambda$, which controls the sensitivity of the trend to short-term fluctuations. The rule of thumb is to use $\lambda = 1600$ for quarterly data, $\lambda = 14400$ for monthly data, and $\lambda = 100$ for yearly data. The `hpfilter` function from the `mFilter` package implements the HP Filter with default values for $\lambda$ determined by the frequency of the time series object (`ts` class).
 
-To see how it works in practice, let's import data on Brazilian GDP using the `sidrar` package which is an interface to IBGE's API. I chose to define the `date` variable using the `as.yearqtr` function from the `zoo` package because it is compatible with `ts` objects -- the default input format for the `hpfilter` function.
+To see how it works in practice, let's use data on Brazilian GDP provided by IBGE. Next, we need to convert it into a `ts` object, since this is the default input format required by `hpfilter` function.
 
 ::: {.callout-tip}
 ## Data
@@ -15,11 +15,8 @@ The Brazilian GDP data set from IBGE is available in the `R4ER2data` package und
 #| warning: false
 #| message: false
 library(tidyverse)
-library(lubridate)
-gdp_br <- sidrar::get_sidra(api = '/t/1620/n1/all/v/all/p/all/c11255/90707/d/v583%202')
-gdp_br <- gdp_br |> 
-  select(quarter = `Trimestre (Código)`, gdp = Valor) |> 
-  mutate(quarter = zoo::as.yearqtr(quarter, format = '%Y%q'))
+gdp_br <- R4ER2data::gdp_br
+
 gdp_br_ts <- ts(gdp_br$gdp, start = first(gdp_br$quarter), frequency = 4)
 ```
 
@@ -88,6 +85,7 @@ gdp_br_hamilton <- tibble(
     y4  = lag(gdp_sa, 11)
   ) 
 hamilton_filter <- lm(y ~ y1 + y2 + y3 + y4, gdp_br_hamilton)
+
 hamilton_out <- hamilton_filter |> 
   broom::augment() |> 
   mutate(quarter = gdp_br_hamilton$quarter[as.numeric(.rownames)]) |> 
@@ -122,11 +120,14 @@ gdp_br_hamilton2 <- tibble(
     y3  = lag(gdp_sa, 14),
     y4  = lag(gdp_sa, 15)
   ) 
+
 hamilton_filter2 <- lm(y ~ y1 + y2 + y3 + y4, gdp_br_hamilton2)
+
 hamilton_out2 <- hamilton_filter2 |> 
   broom::augment() |> 
   mutate(quarter = gdp_br_hamilton2$quarter[as.numeric(.rownames)]) |> 
   select(quarter, trend = .fitted, cycle = .resid)
+
 hamilton_out2 |> 
   pivot_longer(-quarter, names_to = 'var', values_to = 'value') |> 
   ggplot(aes(x = quarter)) +
@@ -147,6 +148,7 @@ final_out <- hamilton_out2 |>
     hp_out |> 
       mutate(type = 'HP')
   )
+
 final_out |> 
   pivot_longer(-c(quarter, type), names_to = 'var', values_to = 'value') |> 
   ggplot(aes(x = quarter)) +

@@ -58,14 +58,17 @@ gamma_params <- list(
 
 gamma_densities <- map_df(
   gamma_params,
-  ~ tibble(
-    quantiles = seq(0, 25, 0.1)
-  ) |> mutate(
-    value = dgamma(quantiles, shape = .x['shape'], scale = .x['scale']),
-    shape = .x['shape'],
-    scale = .x['scale'],
-    id    = paste0('shape = ', shape, '; scale = ', scale)
-  )
+  function(x) {
+    tibble(
+      quantiles = seq(0, 25, 0.1)
+    ) |> 
+      mutate(
+        value = dgamma(quantiles, shape = x['shape'], scale = x['scale']),
+        shape = x['shape'],
+        scale = x['scale'],
+        id    = paste0('shape = ', shape, '; scale = ', scale)
+      )
+  }
 )
 
 gamma_densities |> 
@@ -79,7 +82,7 @@ The panels, from left to right, reflect an increasing belief that $\sigma^2$ can
 
 ```{r}
 beta25 <- tibble(
-  quantiles = seq(0,1,0.01),
+  quantiles = seq(0, 1, 0.01),
   value = dbeta(quantiles, 2, 5)
 )
 
@@ -117,19 +120,19 @@ The code snippet below combines the three essential blocks. There are a few impo
 
 ``` stan
 data {
-  int<lower=1> T;
-  real y[T];
-  real x[T];
+int<lower=1> T;
+real y[T];
+real x[T];
 }
 parameters {
-  vector[2] beta;
-  real<lower=0> sigma;
+vector[2] beta;
+real<lower=0> sigma;
 }
 model {
-  y ~ normal(beta[1] + beta[2] * x, sigma);
-  sigma ~ gamma(1,1);
-  beta[1] ~ normal(0,1);
-  beta[2] ~ beta(2,5);
+y ~ normal(beta[1] + beta[2] * x, sigma);
+sigma ~ gamma(1,1);
+beta[1] ~ normal(0,1);
+beta[2] ~ beta(2,5);
 }
 ```
 
@@ -167,18 +170,18 @@ The code snippet below presents the model written in the Stan language. Take a m
 
 ``` stan
 data {
-  int<lower=1> N; // Number of observations 
-  int<lower=1> K; // Number of columns
-  matrix[N,K] df; // Data on dependent variable and predictors
+int<lower=1> N; // Number of observations 
+int<lower=1> K; // Number of columns
+matrix[N,K] df; // Data on dependent variable and predictors
 }
 parameters {
-  vector[K-2] beta;      // Vector of model coefficients
-  real<lower=0> sigma; // Length 1 object for sigma
+vector[K-2] beta;      // Vector of model coefficients
+real<lower=0> sigma; // Length 1 object for sigma
 }
 model {
-  df[, 1] ~ normal(beta[1] * df[, 2] + beta[2] * df[, 4] + (1 - beta[1] - beta[2]) * df[, 3] + beta[3] * df[, 5] + beta[4] * df[, 6] + beta[5] * df[, 7], sigma); // Likelihood
-  beta ~ normal(0,1);          // Prior for the coefficients
-  sigma ~ gamma(0.5,1);       // Prior for error variance
+df[, 1] ~ normal(beta[1] * df[, 2] + beta[2] * df[, 4] + (1 - beta[1] - beta[2]) * df[, 3] + beta[3] * df[, 5] + beta[4] * df[, 6] + beta[5] * df[, 7], sigma); // Likelihood
+beta ~ normal(0,1);          // Prior for the coefficients
+sigma ~ gamma(0.5,1);       // Prior for error variance
 }
 ```
 
@@ -207,19 +210,19 @@ library(rstan)
 set.seed(123)
 
 pc1_model <- stan_model(
- file = 'data/pc1_br.stan' 
+  file = 'data/pc1_br.stan' 
 )
 
 data_pc1 <- list(
- df = pc_data,
- N = nrow(pc_data),
- K = ncol(pc_data)
+  df = pc_data,
+  N  = nrow(pc_data),
+  K  = ncol(pc_data)
 )
 
 pc1_fit <- sampling(
- pc1_model,
- data_pc1,
- verbose = FALSE
+  pc1_model,
+  data_pc1,
+  verbose = FALSE
 )
 ```
 
@@ -243,7 +246,9 @@ We can compute custom statistics directly from the samples of the posterior dist
 
 ```{r}
 posterior_samples   <- rstan::extract(pc1_fit)
+
 beta3_percentile_80 <- quantile(posterior_samples$beta[, 3], prob = c(0.2, 0.8))
+
 beta3_percentile_80
 ```
 
@@ -256,8 +261,8 @@ We can use the `posterior_samples` object along with `ggplot2` to summarize the 
 library(bayesplot)
 
 mcmc_areas(
- pc1_fit, 
- pars = c('beta[3]', 'beta[4]'),
- prob = 0.8
+  pc1_fit, 
+  pars = c('beta[3]', 'beta[4]'),
+  prob = 0.8
 )
 ```

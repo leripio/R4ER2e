@@ -76,7 +76,7 @@ cpi_tbl <- R4ER2data::cpi_us |>
 cpi_12m <- cpi_tbl |> 
   arrange(date) |> 
   mutate(
-    value_12m = (roll_prodr(1+value/100, n = 12)-1)*100
+    value_12m = (roll_prodr(1 + (value / 100), n = 12) -1) * 100
   )
 ```
 
@@ -105,8 +105,8 @@ Sometimes we are more interested in the level of a series rather than its variat
 cpi_level <- cpi_tbl |> 
   arrange(date) |> 
   mutate(
-    value_level = cumprod(1+value/100),
-    value_level = (value_level/first(value_level))*100
+    value_level = cumprod(1 + (value / 100)),
+    value_level = (value_level / first(value_level)) * 100
   )
 ```
 

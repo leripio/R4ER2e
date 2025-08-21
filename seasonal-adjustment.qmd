@@ -28,8 +28,8 @@ library(tidyverse)
 library(forecast)
 
 retail_ts_nsa <- retail_sales_br |> 
-  dplyr::filter(var == 'retail') |> 
-  dplyr::pull(value) |> 
+  filter(var == 'retail') |> 
+  pull(value) |> 
   ts(start = c(2000,1), frequency = 12)
 
 retail_ts_nsa |> 
@@ -48,8 +48,8 @@ retail_ts_nsa |>
   ggmonthplot() +
   labs(
     title = 'Retail sales in Brazil - Volume Index (2014 = 100)',
-    x = '',
-    y = 'Index (2014 = 100)'
+    x     = '',
+    y     = 'Index (2014 = 100)'
   )
 ```
 
@@ -68,10 +68,10 @@ retail_sa_autox13 |>
   autoplot() +
   autolayer(retail_ts_nsa, series = 'Retail NSA') +
   labs(
-    title = 'Retail sales in Brazil - Volume Index (2014 = 100)',
+    title    = 'Retail sales in Brazil - Volume Index (2014 = 100)',
     subtitle = 'Seasonally-Adjusted',
-    x = '',
-    y = 'Index (2014 = 100)'
+    x        = '',
+    y        = 'Index (2014 = 100)'
   )
 ```
 
@@ -82,10 +82,10 @@ retail_sa_autox13 |>
   final() |> 
   ggmonthplot() +
   labs(
-    title = 'Retail sales in Brazil - Volume Index (2014 = 100)',
+    title    = 'Retail sales in Brazil - Volume Index (2014 = 100)',
     subtitle = 'Seasonally-Adjusted',
-    x = '',
-    y = 'Index (2014 = 100)'
+    x        = '',
+    y        = 'Index (2014 = 100)'
   )
 ```
 
@@ -97,10 +97,8 @@ To conclude, it's worth mentioning that we can access relevant information about
 #| results:  false
 #| warning: false
 #| output: false
-retail_sa_autox13 |> 
-  summary()
-retail_sa_autox13 |> 
-  forecast::checkresiduals()
+retail_sa_autox13 |> summary()
+retail_sa_autox13 |> forecast::checkresiduals()
 ```
 
 ### Moving to a custom specification
@@ -110,20 +108,20 @@ Sometimes we simply can't rely on automatic model selection -- either because we
 For instance, IBGE releases its own seasonally adjusted retail sales data. So, if we were to analyze or forecast seasonally adjusted data using IBGE's releases as our target, we would necessarily have to adopt its specification. Let's first compare the automatic seasonal adjustment we computed in the previous section with the official seasonally adjusted series provided by IBGE.
 
 ```{r}
-retail_sa_ibge <- 
-  retail_sales_br |> 
-  dplyr::filter(var == 'retail_sa') |> 
-  dplyr::pull(value) |> 
+retail_sa_ibge <- retail_sales_br |> 
+  filter(var == 'retail_sa') |> 
+  pull(value) |> 
   ts(start = c(2000,1), frequency = 12)
+
 retail_sa_autox13 |> 
   final() |> 
   autoplot() +
   autolayer(retail_sa_ibge, series = 'Retail Sales SA (official)') +
   labs(
-    title = 'Retail sales in Brazil - Volume Index (2014 = 100)',
+    title    = 'Retail sales in Brazil - Volume Index (2014 = 100)',
     subtitle = 'Seasonally-Adjusted',
-    x = '',
-    y = 'Index (2014 = 100)'
+    x        = '',
+    y        = 'Index (2014 = 100)'
   )
 ```
 
@@ -148,10 +146,10 @@ carnival         <- easter %m-% days(47)
 corpus_christi   <- easter %m+% days(60)
 carnival_holiday <- seasonal::genhol(
   carnival, 
-  start = -1, 
-  end = 1, 
+  start     = -1, 
+  end       = 1, 
   frequency = 12, 
-  center = 'calendar'
+  center    = 'calendar'
 )
 corpus_christi_holiday <- seasonal::genhol(
   corpus_christi,
@@ -161,7 +159,11 @@ corpus_christi_holiday <- seasonal::genhol(
 retail_sa_customx13 <- seas(
   x = retail_ts_nsa,
   regression.variables = c(
-    "td", "easter[1]", "ls2020.apr", "tc2020.apr", "ls2020.dec"
+    "td", 
+    "easter[1]", 
+    "ls2020.apr", 
+    "tc2020.apr", 
+    "ls2020.dec"
   ),
   xreg = ts.union(carnival_holiday, corpus_christi_holiday), 
   regression.usertype = "holiday",

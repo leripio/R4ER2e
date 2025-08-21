@@ -15,30 +15,29 @@ For those interested in a more rigorous and detailed approach to this subject, I
 
 Forecasting is all about extrapolating patterns. When our forecast depends on other variables, we're assuming that the historical relationship between the target and the explanatory variables will hold in the future. Likewise, when we employ univariate methods, the main assumption is that the time series features remain constant or evolve in an predictable way. Hence, the first step is to investigate the features of the time series.
 
-Let's import the monthly CPI excluding regulated prices (not seasonally adjusted) from the Brazilian Central Bank API using the `rbcb` package. Then, we'll plot the series using the `autoplot` function from the `forecast` package. Note that it's based on `ggplot`, so we can add `ggplot` layers to the plot.
+Let's import the monthly CPI excluding regulated prices (not seasonally adjusted). Then, we'll plot the series using the `autoplot` function from the `forecast` package. Note that it's based on `ggplot`, so we can add `ggplot` layers to the plot.
 
 ::: {.callout-tip}
 ## Data
-monthly CPI excluding regulated prices (not seasonally adjusted) from the Brazilian Central Bank is available in the `R4ER2data` package under the name `cpi_br`.
+Monthly CPI excluding regulated prices (not seasonally adjusted) from the Brazilian Central Bank is available in the `R4ER2data` package under the name `cpi_br`.
 :::
 
 ```{r}
 #| warning: false
 #| message: false
-library(forecast)
 library(tidyverse)
-cpi_br <- rbcb::get_series(
-  code = list("cpi" = 11428),
-  start_date = "2004-01-01",
-  end_date   = "2022-08-01",
-  as = "ts"
-)
+cpi_br <- R4ER2data::cpi_br
+
+cpi_br_ts <- ts(cpi_br$cpi, start = c(2004, 1), frequency = 12)
 ```
 
 ```{r}
+#| warning: false
+#| message: false
 #| label: fig-cpi_br_ex_autoplot
 #| fig-cap: Plot of Brazilian CPI ex-regulated prices - %MoM NSA
-autoplot(cpi_br) + 
+library(forecast)
+autoplot(cpi_br_ts) + 
   labs(
     title = 'Brazilian CPI ex-regulated prices - %MoM NSA',
     y = '',
@@ -54,7 +53,8 @@ A more informative plot can be obtained using the `mstl` function, which decompo
 ```{r}
 #| label: fig-cpi_br_ex_mstl
 #| fig-cap: MSTL Decomposition of the Brazilian CPI ex-regulated prices time series
-mstl(cpi_br) |> 
+cpi_br_ts |>
+  mstl() |> 
   autoplot() +
   labs(title = 'Brazilian CPI: time series decomposition')
 ```
@@ -76,16 +76,19 @@ The `rolling_origin` function from `rsample` returns a convenient object where e
 #| message: false
 library(rsample)
 library(timetk)
-cpi_df <- 
-  tk_tbl(cpi_br, rename_index = 'date') |> 
+cpi_df <- tk_tbl(
+  cpi_br_ts, 
+  rename_index = 'date'
+) |> 
   filter(date >= 'jan 2016')
-cpi_split <- 
-  rolling_origin(
-    cpi_df, 
-    initial = which(cpi_df$date == 'dec 2018'),
-    assess = 1,
-    cumulative = TRUE
-  ) 
+
+cpi_split <- rolling_origin(
+  cpi_df, 
+  initial = which(cpi_df$date == 'dec 2018'),
+  assess = 1,
+  cumulative = TRUE
+) 
+
 cpi_split
 ```
 
@@ -106,56 +109,66 @@ Moreover, in the presence of a seasonal pattern, models that are more successful
 [^forecasting-the-basic-workflow-1]: It's also possible to fit a model for each time period -- an approach known as **direct forecast** -- or even to use different models for different horizons. However, we won't explore these topics here.
 
 ```{r}
+#| cache: true
 cpi_fc <- cpi_split |> 
   mutate(
     ets_fc = map_dbl(
       .x = splits, 
-      .f = ~ (.x |> 
-                analysis() |> 
-                tk_ts(select = 'value', start = c(2016,1), frequency = 12) |> 
-                ets() |> 
-                forecast(h = 1)
-      )$mean
+      .f = function(x) { 
+        ets_fc_out <- x |> 
+          analysis() |> 
+          tk_ts(select = 'value', start = c(2016, 1), frequency = 12) |> 
+          ets() |> 
+          forecast(h = 1)
+        ets_fc_out <- ets_fc_out$mean
+      }
     ),
     arima_fc = map_dbl(
       .x = splits, 
-      .f = ~ (.x |> 
-                analysis() |> 
-                tk_ts(select = 'value', start = c(2016,1), frequency = 12) |> 
-                auto.arima() |> 
-                forecast(h = 1)
-      )$mean
+      .f = function(x) {
+        arima_fc_out <- x |> 
+          analysis() |> 
+          tk_ts(select = 'value', start = c(2016, 1), frequency = 12) |> 
+          auto.arima() |> 
+          forecast(h = 1)
+        arima_fc_out <- arima_fc_out$mean
+      }
     ),
-    avg_fc = (arima_fc+ets_fc)/2,
+    avg_fc = (arima_fc + ets_fc) / 2,
     date = map_chr(
       .x = splits,
-      .f = ~ (.x |> 
-                assessment()
-      )$date |> 
-        as.character()
-    )  |> 
-      zoo::as.yearmon()
+      .f = function(x) {
+        x |> 
+          assessment() |> 
+          pull(date) |> 
+          as.character() 
+      } 
+    ),
+    date = date |> zoo::as.yearmon()
   ) |> 
   select(date, contains('fc')) |> 
   right_join(cpi_df, by = 'date')
+
 cpi_fc
 ```
 
 Now we have a data frame with the predictions from each source plus the actual (realized) value for the CPI for the last 45 months -- including periods pre-, during- and post-Covid. In the next section, we'll see how to get a representative summary of the results so as we can conclude which model is better. You may have a clue on how to do this, but I can assure you that there are some relevant aspects worth exploring that are hardly found elsewhere. Before moving to the next section, we can take a look on how these forecasts look like.
 
 ```{r}
-#| code-fold: true
-#| code-summary: "Show the code"
+#| warning: false
+#| message: false
 cpi_fc |> 
   pivot_longer(-date, names_to = 'model', values_to = 'forecast') |> 
   ggplot(aes(x = date)) +
   geom_line(aes(y = forecast, color = model), lwd = 1) +
   theme_light() +
-  scale_color_brewer(type = 'qual', palette = 6) +
+  scale_color_brewer(type = 'div', palette = 1) +
   theme(legend.position = 'top') +
-  labs(title = 'Brazilian CPI Forecasts - %MoM NSA',
-       y = 'CPI (%MoM NSA)',
-       color = '')
+  labs(
+    title = 'Brazilian CPI Forecasts - %MoM NSA',
+    y = 'CPI (%MoM NSA)',
+    color = ''
+  )
 ```
 
 ## Step 4: Evaluate the Model
@@ -169,25 +182,22 @@ Surely, these conditions don't apply to all businesses. Someone interested in fo
 To demonstrate this idea, I will propose two alternative accuracy metrics that are slight modifications of the well-known MAE. The first (`accuracy_1`) assigns double the weight to upside errors (predictions below actual values), whereas the second (`accuracy_2`) assigns (linearly) decreasing weights to errors ocurring further in the past. You should be aware that the results from the two metrics are not directly comparable; the ordering of models is the relevant information here.
 
 ```{r}
-accuracy_1 <- function(e){
-  .abs_weighted_errors      <- ifelse(e > 0, 2*e, abs(e))
+accuracy_1 <- function(e) {
+  .abs_weighted_errors      <- ifelse(e > 0, 2 * e, abs(e))
   .mean_abs_weighted_errors <- mean(.abs_weighted_errors)
-  return(.mean_abs_weighted_errors)
 }
-accuracy_2 <- function(e){
+
+accuracy_2 <- function(e) {
   .abs_errors               <- abs(e)
   .weights                  <- seq(from = 1, to = length(.abs_errors), by = 1)
-  .weights                  <- .weights/sum(.weights)
+  .weights                  <- .weights / sum(.weights)
   .mean_abs_weighted_errors <- weighted.mean(.abs_errors, .weights)
-  return(.mean_abs_weighted_errors)
 }
 ```
 
 Below I plot the `accuracy_1` function along with the original MAE function as a more effective way to give you a sense of what's happening behind the scenes. Basically, for negative errors (realized value below the prediction), the weights are the same as in the original MAE, while they're somewhat higher for positive errors (realized value above the prediction).
 
 ```{r}
-#| code-fold: true
-#| code-summary: "Show the code"
 #| warning: false
 #| message: false
 library(ggtext)
@@ -195,10 +205,11 @@ acc_demo <- tibble(
   x = seq(from = -2, to = 2, by = 0.01)
 ) |> 
   mutate(
-    t   = 1:n(),
-    Loss_1 = ifelse(x > 0, 2*x, abs(x)),
+    t      = 1:n(),
+    Loss_1 = ifelse(x > 0, 2 * x, abs(x)),
     mae    = abs(x)
   )
+
 acc_demo |> 
   ggplot(aes(x = x)) + 
   geom_line(aes(y = Loss_1), color = "darkblue", lwd = 1) +
@@ -222,22 +233,31 @@ Now we're ready to apply our two custom functions plus the MAE to the errors we 
 In addition, there's no such thing as the best metric. As we saw earlier in this section, the appropriate metric is the one that reflects our objective as closely as possible. Moreover, we find several desirable characteristics in conventional metrics such as MAE or RMSE, and I don't mean to rule them out (see @hyndman_metrics for more on this). The main message here is that we must be fully aware of what our objective is and how to translate it into an appropriate function. In this regard, the knowledge of functional forms is essential.
 
 ```{r}
+#| warning: false
+#| message: false
 cpi_errors <- cpi_fc |> 
   filter(date >= 'Jan 2019') |> 
-  mutate(across(contains('fc'), ~ value - .x, .names = 'error_{.col}')) |> 
+  mutate(
+    across(
+      contains('fc'), 
+      ~ value - .x, 
+      .names = 'error_{.col}'
+    )
+  ) |> 
   summarise(
     across(
       contains('error'), 
       list(
-        'acc1' = ~ accuracy_1(.x), 
-        'acc2' = ~ accuracy_2(.x),
-        'mae'  = ~ mean(abs(.x))
+        'acc1' = function(x) accuracy_1(x), 
+        'acc2' = function(x) accuracy_2(x),
+        'mae'  = function(x) mean(abs(x))
       ), 
       .names = '{.col}-{.fn}')) |> 
   pivot_longer(everything(), names_to = 'model_metric', values_to = 'value') |> 
   separate('model_metric', c('model', 'metric'), '-') |> 
   pivot_wider(names_from = 'metric', values_from = 'value') |> 
   mutate(model = str_remove_all(model, 'error_|_fc'))
+
 cpi_errors
 ```
 

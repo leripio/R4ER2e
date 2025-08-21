@@ -117,6 +117,7 @@ The data set containing data on the 51 subsectors that make up the Brazilian CPI
 #| warning: false
 library(tidyverse)
 cpi_item_br <- R4ER2data::cpi_item_br
+
 cpi_twelveMonths <- cpi_item_br$CPI |> 
   arrange(date)
 
@@ -144,20 +145,21 @@ model.spec$B <- matrix(
     "b2", 0, 1, 0, 
     "b3", 0, 0, 1, 
     "b4", 0, 0, 0
-    ), 4, 4)
-model.spec$Z <- matrix(
-  list(0), nrow(cpi_ts), 4)
+  ), 4, 4)
+
+model.spec$Z      <- matrix(list(0), nrow(cpi_ts), 4)
 model.spec$Z[, 1] <- rownames(cpi_ts)
-model.spec$Q <- "diagonal and equal"
-model.spec$R <- "diagonal and unequal"
-model.spec$A <- "zero" 
+model.spec$Q      <- "diagonal and equal"
+model.spec$R      <- "diagonal and unequal"
+model.spec$A      <- "zero" 
+
 # Estimate using the EM Algorithm
 model.em <- MARSS(
   cpi_ts, 
   model  = model.spec, 
   inits  = list(x0 = 0), 
   silent = TRUE
-  )
+)
 ```
 
 ## Results

@@ -83,6 +83,7 @@ library(tidyverse)
 library(R4ER2data)
 
 gdp_ip_br <- R4ER2data::gdp_ip_br
+
 ```
 
 After becoming familiar with the data, we will create the variables of interest --- the quarterly growth rate of GDP and the monthly growth rate of Industrial Production --- and then organize the dataset in matrix format, as required by the `MARSS` function.
@@ -95,8 +96,8 @@ Note that we have data on GDP up to the third quarter of 2024 and Industrial Pro
 model_data <- gdp_ip_br |> 
   dplyr::arrange(date) |>
   dplyr::mutate(
-    delta_gdp = 100 * log(gdp_br_sa/dplyr::lag(gdp_br_sa, 3)),
-    delta_ip  = 100 * log(ip_br_sa/dplyr::lag(ip_br_sa, 1))
+    delta_gdp = 100 * log(gdp_br_sa / dplyr::lag(gdp_br_sa, 3)),
+    delta_ip  = 100 * log(ip_br_sa / dplyr::lag(ip_br_sa, 1))
   ) |> 
   dplyr::filter(date >= '2002-02-01')
 
@@ -158,8 +159,8 @@ model_spec$R <- matrix(
   ncol = 2, nrow = 2
 )
 
-model_spec$x0 <- matrix(0,5,1)
-model_spec$V0 <- diag(1,5)
+model_spec$x0     <- matrix(0,5,1)
+model_spec$V0     <- diag(1,5)
 model_spec$tinitx <- 0
 ```
 

@@ -119,6 +119,21 @@
       "Repository": "CRAN",
       "Hash": "46cd5be5141c4d4eedb1a6f89acf7c29"
     },
+    "R2HTML": {
+      "Package": "R2HTML",
+      "Version": "2.3.4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "grDevices",
+        "graphics",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "Hash": "7e8693c39a707702e221eb536cf090ee"
+    },
     "R4ER2data": {
       "Package": "R4ER2data",
       "Version": "1.0.0",
@@ -662,13 +677,13 @@
     },
     "curl": {
       "Package": "curl",
-      "Version": "5.2.1",
+      "Version": "7.0.0",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
         "R"
       ],
-      "Hash": "411ca2c03b1ce5f548345d2fc2685f7a"
+      "Hash": "aa27e963d3deccf4bade44d06b976977"
     },
     "data.table": {
       "Package": "data.table",
@@ -785,6 +800,32 @@
       ],
       "Hash": "fedd9d00c2944ff00a0e2696ccf048ec"
     },
+    "dsa": {
+      "Package": "dsa",
+      "Version": "1.0.12",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "R2HTML",
+        "dygraphs",
+        "forecast",
+        "ggplot2",
+        "grid",
+        "gridExtra",
+        "htmlwidgets",
+        "rJava",
+        "reshape2",
+        "seastests",
+        "stats",
+        "timeDate",
+        "tools",
+        "tsoutliers",
+        "xts",
+        "zoo"
+      ],
+      "Hash": "0ed91142bbc7a7ce11f4e3b8a08d6b09"
+    },
     "dtplyr": {
       "Package": "dtplyr",
       "Version": "1.3.1",
@@ -834,14 +875,13 @@
     },
     "evaluate": {
       "Package": "evaluate",
-      "Version": "0.24.0",
+      "Version": "1.0.4",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
-        "R",
-        "methods"
+        "R"
       ],
-      "Hash": "a1066cbc05caee9a4bf6d90f194ff4da"
+      "Hash": "7c29cedd515863338c7f5f77fe9ddf74"
     },
     "extraDistr": {
       "Package": "extraDistr",
@@ -2120,7 +2160,7 @@
     },
     "promises": {
       "Package": "promises",
-      "Version": "1.3.0",
+      "Version": "1.3.3",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
@@ -2132,7 +2172,7 @@
         "rlang",
         "stats"
       ],
-      "Hash": "434cd5388a3979e74be5c219bcd6e77d"
+      "Hash": "70157a4a73963da5779f9c67f4d31fd1"
     },
     "prophet": {
       "Package": "prophet",
@@ -2233,16 +2273,27 @@
       ],
       "Hash": "c6e207b874494a7ac4d52f02dcd7d3af"
     },
+    "rJava": {
+      "Package": "rJava",
+      "Version": "1.0-11",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "methods"
+      ],
+      "Hash": "524167e771b81342f8dd7a891ed3afa8"
+    },
     "ragg": {
       "Package": "ragg",
-      "Version": "1.3.2",
+      "Version": "1.4.0",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
         "systemfonts",
         "textshaping"
       ],
-      "Hash": "e3087db406e079a8a2fd87f413918ed3"
+      "Hash": "1591adde9ce8ff7de58072e4a32b66ce"
     },
     "rappdirs": {
       "Package": "rappdirs",
@@ -2253,25 +2304,6 @@
         "R"
       ],
       "Hash": "5e3c5dc0b071b21fa128676560dbe94d"
-    },
-    "rbcb": {
-      "Package": "rbcb",
-      "Version": "0.1.14",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Requirements": [
-        "digest",
-        "httr",
-        "jsonlite",
-        "methods",
-        "purrr",
-        "stats",
-        "tibble",
-        "utils",
-        "xml2",
-        "xts"
-      ],
-      "Hash": "d98d6603bf64cc625b59144b490059db"
     },
     "reactR": {
       "Package": "reactR",
@@ -2430,16 +2462,6 @@
         "stringr"
       ],
       "Hash": "bb5996d0bd962d214a11140d77589917"
-    },
-    "rjson": {
-      "Package": "rjson",
-      "Version": "0.2.23",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Requirements": [
-        "R"
-      ],
-      "Hash": "7a04e9eff95857dbf557b4e5f0b3d1a8"
     },
     "rlang": {
       "Package": "rlang",
@@ -2634,6 +2656,22 @@
       ],
       "Hash": "568c965a9ecd8f57489aee9c7a7ee9af"
     },
+    "seastests": {
+      "Package": "seastests",
+      "Version": "0.15.4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "forecast",
+        "graphics",
+        "stats",
+        "utils",
+        "xts",
+        "zoo"
+      ],
+      "Hash": "2d826321652a67c2bc1e61d18978701e"
+    },
     "selectr": {
       "Package": "selectr",
       "Version": "0.4-2",
@@ -2659,22 +2697,6 @@
         "stats"
       ],
       "Hash": "5c47e84dc0a3ca761ae1d307889e796d"
-    },
-    "sidrar": {
-      "Package": "sidrar",
-      "Version": "0.2.9",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Requirements": [
-        "R",
-        "httr",
-        "magrittr",
-        "rjson",
-        "rvest",
-        "stringr",
-        "xml2"
-      ],
-      "Hash": "b0924d98328e4765a15fc39da8929dfe"
     },
     "slider": {
       "Package": "slider",
@@ -3023,6 +3045,18 @@
       ],
       "Hash": "0749a31fa3e48efc115acd1e6daabac6"
     },
+    "tsoutliers": {
+      "Package": "tsoutliers",
+      "Version": "0.6-10",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "forecast",
+        "stats"
+      ],
+      "Hash": "4157edb648ad3b8d816b764c55d374a7"
+    },
     "tzdb": {
       "Package": "tzdb",
       "Version": "0.4.0",
@@ -3130,7 +3164,7 @@
     },
     "withr": {
       "Package": "withr",
-      "Version": "3.0.0",
+      "Version": "3.0.2",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
@@ -3138,7 +3172,7 @@
         "grDevices",
         "graphics"
       ],
-      "Hash": "d31b6c62c10dcf11ec530ca6b0dd5d35"
+      "Hash": "cc2d62c76458d425210d1eb1478b30b4"
     },
     "x13binary": {
       "Package": "x13binary",
