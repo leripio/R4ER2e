@@ -1,0 +1,136 @@
+# Machine learning 
+
+In other parts of this book, we estimated the relationship between a variable of interest, $Y$, and a set of predictors, $X$. This task was mostly accomplished within the linear regression framework, with the OLS method being the standard choice to estimate the vector of coefficients, $\beta$. Some extensions were also considered — for example, the use of LASSO regression as a tool for variable selection. All of these approaches fall under the Statistical Learning framework; that is, they are methods designed to estimate $Y$ as a function of $X$.
+
+However, although these methods can deliver good results — especially given their interpretability and low computational cost — they lack the flexibility to address many common challenges in real-world applications. What is popularly known as *Machine Learning* can be understood as a collection of algorithms that estimate the relationship between $Y$ and $X$ through more complex functions, for instance by allowing nonlinearity in the parameters. These methods are particularly well suited to settings with large amounts of data, since calibrating multiple parameters is often required to achieve high accuracy.
+
+In this chapter, we will walk through a basic workflow using the [tidymodels](https://www.tidymodels.org/) framework, which provides a unified and consistent structure for building forecasts using a wide variety of machine learning algorithms in a seamless way. As a case study, we will fit an XGBoost model to the perfume prices data. The goal here is not to achieve the most accurate predictions, but rather to illustrate the workflow. For readers interested in a deeper understanding of the fundamentals of statistical learning — and machine learning in particular — @isl2e is a highly valuable resource.
+
+::: {.callout-tip}
+## Data
+The data set containing the variables for this exercise is available in the `R4ER2data` package under the name `perfume_prices_cpi_br`.
+:::
+
+Let's start by importing the data.
+
+```{r}
+#| message: false
+#| warning: false
+library(R4ER2data)
+
+perfume_prices_cpi_br <- R4ER2data::perfume_prices_cpi_br
+```
+
+The first step is to define our sampling scheme. At its most basic level, this means setting aside one part of the sample to fit the model and another to test its accuracy. Ideally, we would also reserve a portion of the sample to tune the model’s parameters. In practice, however — especially when working with time series — we often lack a large number of observations to allow for many splits. For this reason, the most common approaches are the train/test split or the rolling window scheme. These can be implemented using the `initial_time_split` and `rolling_origin` functions from the `rsample` package, which is part of the `tidymodels` framework. 
+
+For this exercise, we will choose the train/test split and use 75% of the sample to fit the model and the remaining 25% to test its accuracy.
+
+```{r}
+#| message: false
+#| warning: false
+library(tidymodels)
+
+perfume_split <- perfume_prices_cpi_br|> 
+  initial_time_split(prop = 3/4)
+
+perfume_train <- perfume_split |> analysis()
+perfume_test  <- perfume_split |> assessment()
+```
+
+Next, we need to create the recipe for this model — that is, a set of instructions specifying how the data should be preprocessed. This step must be applied only to the training portion of the sample, since applying transformations to the entire dataset could contaminate the test sample. For our purposes, we will simply specify the model — the CPI for perfume as the outcome, using all variables except the date as predictors — and normalize all predictors.
+
+```{r}
+#| message: false
+#| warning: false
+model_recipe <- recipe(cpi_perfume ~ ., data = perfume_train) |>
+  step_rm('date') |> 
+  step_normalize(all_numeric_predictors())
+```
+
+Now, we need to specify which model to use. This is one of the most powerful features of the `tidymodels` framework: we can switch between algorithms by changing just a few lines of code. In this example, we will fit an XGBoost model, which falls under the `boost_tree()` specification. Since multiple packages can implement the same algorithm, we use the `set_engine()` function to choose the desired one — in this case, the `xgboost` package.
+
+Notice that the XGBoost algorithm has several parameters that can be tuned — you can check them by running `?boost_tree`. Since this example is only for illustrative purposes, I will explicitly tune only the `trees` parameter. Also note that I could simply assign a fixed value to this parameter (for example, 10). Instead, I will set it to `tune()`, which acts as a placeholder to be optimized later during the tuning process.
+
+```{r}
+#| message: false
+#| warning: false
+library(xgboost)
+xgb_model <- 
+  boost_tree(trees = tune()) |> 
+  set_mode("regression") |> 
+  set_engine("xgboost")
+```
+
+At this stage, we can bundle the recipe and the model into a single workflow, which will be especially helpful in the following steps.
+
+```{r}
+model_wf <- workflow() |> 
+  add_model(xgb_model) |> 
+  add_recipe(model_recipe)
+```
+
+The tuning step consists of finding the value of the `trees` parameter that maximizes model accuracy. The most naïve approach would be to fit the model with arbitrary parameter values and then evaluate its performance. Notice, however, that doing this directly on the test set would raise overfitting concerns, so the validation set must instead be created as a subset of the training data.
+
+The `tune` package — also part of the `tidymodels` framework — makes it straightforward to tune parameters using sampling techniques. In this case, we need a sampling scheme that generates multiple samples to test the parameter values, so we will use the `rolling_origin` method: 30 observations will be used to fit the model for each value of the `trees` parameter, leaving 1 observation for testing. Since our training set consists of only 43 observations, this procedure will generate 13 evaluation points for each parameter value.
+
+But where do these candidate values come from? There are several possibilities. The most common strategies are to test a set of commonly used values for the parameter, to define a grid of candidate values, or to sample values from a distribution. Here, we will take the intermediate approach by performing a grid search, defining a hyperparameter space ranging from 5 to 20 for the `trees` parameter.
+
+```{r}
+#| cache: true
+sample_folds <- rolling_origin(
+  perfume_train,
+  initial    = 30,
+  assess     = 1,
+  cumulative = TRUE,
+  skip       = 0
+)
+
+grid_trees <- tibble(trees = 5:20)
+metrics    <- metric_set(rmse)
+
+tuned_values <- tune_grid(
+  model_wf,
+  resamples = sample_folds,
+  grid      = grid_trees,
+  metrics   = metrics,
+  control   = control_grid(save_pred = TRUE)
+)
+
+show_best(tuned_values, metric = 'rmse')
+```
+
+We can see that, according to the Root Mean Squared Error (RMSE) metric, the value of the trees parameter that minimizes the error is 13 — although other values yield virtually the same result. To complete the model fitting process, we will use this value to train the model on the full training sample. Finally, the `collect_metrics()` function returns the accuracy metrics evaluated on the test sample.
+
+```{r}
+best_tree <- select_best(tuned_values, metric = 'rmse')
+final_wf  <- finalize_workflow(model_wf, best_tree)
+
+xgb_fit <- final_wf |> 
+  last_fit(perfume_split)
+
+xgb_fit |> 
+  collect_metrics()
+```
+
+One of the most common criticisms of machine learning algorithms is that they are often considered *black boxes*, in the sense that we are not fully aware of the functional form linking the predictors to the target variable. We know the input data and we know the output value, but what happens in between is largely unknown. For this reason, there are ongoing initiatives to make these models more *interpretable*. 
+While a full discussion of interpretability is beyond the scope of this book, there are tools that can provide useful insights into model behavior. For instance, the `vip` package returns measures of variable importance, which are particularly helpful for identifying the most relevant predictors for the outcome.
+
+```{r}
+#| message: false
+#| warning: false
+library(vip)
+xgb_fit |> 
+  extract_fit_parsnip() |> 
+  vip()
+```
+
+Notice that we used the `extract_fit_parsnip()` function to retrieve the fitted model from the workflow object. The same approach should be used when applying the model to generate forecasts on new data.
+
+```{r}
+xgb_fcast <- predict(
+  extract_fit_parsnip(xgb_fit), 
+  perfume_test
+)
+```
+
+This concludes the basic workflow for estimating and applying machine learning models to make predictions. The attentive reader may have noticed that the accuracy results were not very impressive, with the in-sample RMSE (1.31) being much lower than the out-of-sample RMSE (3.40), which is clear evidence of overfitting. There is still much work to be done — for example, by tuning additional parameters. Other possibilities include fitting multiple models and combining them into an ensemble.

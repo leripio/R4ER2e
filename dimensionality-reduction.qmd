@@ -24,17 +24,20 @@ perfume_prices_cpi_br <- R4ER2data::perfume_prices_cpi_br
 
 ```{r}
 #| echo: false
+set.seed(123)
+
+product_blocks <- tibble(
+  var = colnames(perfume_prices_cpi_br)[grep('product\\d+', colnames(perfume_prices_cpi_br))]
+) |> 
+  mutate(block = replicate(n(), paste0('Set of products #', sample(1:4, 1))))
+
 perfume_prices_cpi_br |> 
   pivot_longer(
     cols = starts_with('product'), 
     names_to = 'var',
     values_to = 'value'
   ) |> 
-  group_by(var) |> 
-  mutate(
-    block = paste0('Set of products #', sample(1:4, 1))
-  ) |> 
-  ungroup() |> 
+  left_join(product_blocks, by = 'var') |> 
   ggplot(aes(x = date)) +
   geom_line(aes(y = value, color = var), lwd = 1) +
   geom_line(aes(y = cpi_perfume), color = 'black', lwd = 1) +
@@ -64,19 +67,13 @@ perfume_prices_cpi_br_scaled <- perfume_prices_cpi_br |>
 
 ```{r}
 #| echo: false
-set.seed(1)
-
 perfume_prices_cpi_br_scaled |> 
   pivot_longer(
     cols = starts_with('product'), 
     names_to = 'var',
     values_to = 'value'
   ) |> 
-  group_by(var) |> 
-  mutate(
-    block = paste0('Set of products #', sample(1:4, 1))
-  ) |> 
-  ungroup() |> 
+  left_join(product_blocks, by = 'var') |> 
   ggplot(aes(x = date)) +
   geom_line(aes(y = value, color = var), lwd = 1) +
   geom_line(aes(y = cpi_perfume), color = 'black', lwd = 1) +

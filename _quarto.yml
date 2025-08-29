@@ -24,17 +24,18 @@ book:
       - seasonal-adjustment-hf.qmd
       - deflating-values.qmd
       - hp-filter.qmd
-    - part: 'Forecasting'
-      chapters:
-      - forecasting-the-basic-workflow.qmd
-      - forecasting-through-analogy.qmd
-      - forecasting-through-scenarios.qmd
     - part: 'Economic modeling'
       chapters:
       - modeling-single-equation.qmd
       - modeling-multiple-equations.qmd
       - dimensionality-reduction.qmd
       - bayesian-inference.qmd
+    - part: 'Forecasting'
+      chapters:
+      - forecasting-the-basic-workflow.qmd
+      - forecasting-through-analogy.qmd
+      - forecasting-through-scenarios.qmd
+      - machine-learning.qmd
     - part: 'State-space models'
       chapters:
       - state-space-intro.qmd

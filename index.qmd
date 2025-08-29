@@ -79,7 +79,7 @@ For more information about me and my work, visit [rleripio.com](http://www.rleri
 
 # Citation {.unnumbered}
 
-Leripio, J. Renato. (2023) R for Economic Research: Essential tools for modern economic analysis. First Edition (Apr 2023). Available at http://book.rleripio.com
+Leripio, J. Renato. (2025) R for Economic Research: Essential tools for modern economic analysis. Second Edition (September 2025). Available at http://book.rleripio.com
 
 # License {.unnumbered}
 
