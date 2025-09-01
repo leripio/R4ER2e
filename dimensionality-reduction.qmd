@@ -95,7 +95,7 @@ We can now see that several time series closely follow the target. Our main goal
 
 To summarize a large data set into a few key factors, Principal Components Analysis (PCA) is often the go-to tool. Essentially, PCA leverages the eigenvalues and eigenvectors of the covariance matrix to extract factors that explain the variability in the data. Its main advantages are its simplicity and low computational cost, which make it both easy to implement and fast to compute.
 
-However, PCA has its limitations. It is not ideally suited for time series data, as it does not account for autocorrelation. In such cases, the Dynamic Factor Model (DFM), discussed in Chapter 14, provides a more appropriate alternative. Additionally, PCA is an unsupervised method, meaning it does not consider the target variable when computing factors. As a result, the computed factors may or may not be relevant to the target variable -- something we can explore later using a regression model. This will become clearer soon.
+However, PCA has its limitations. It is not ideally suited for time series data, as it does not account for autocorrelation. In such cases, the Dynamic Factor Model (DFM), discussed in Chapter 18, provides a more appropriate alternative. Additionally, PCA is an unsupervised method, meaning it does not consider the target variable when computing factors. As a result, the computed factors may or may not be relevant to the target variable -- something we can explore later using a regression model. This will become clearer soon.
 
 The first step is to convert the data into a matrix. Next, we call the `prcomp` function from the `stats` package. Note that we have chosen not to center or scale the data, as these preprocessing steps were already applied earlier.
 

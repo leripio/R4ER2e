@@ -965,13 +965,13 @@ And since each cell is a list rather than a single observation, we're by no mean
 
 We're almost there in our goal to review the basics of Tidyverse. Summarizing all the previous sections succinctly was challenging, but I believe you've received enough information to start carrying out data analyses on your own. When it comes to making graphics, extrapolating from the basics is somewhat harder, because there are infinite possibilities for customization.
 
-In fact, the grammar used in `ggplot2` package is broad and far from simple at first glance. But as you practice, it becomes increasingly graspable. Still, I encourage you to dive into the amazing @ggplo2book, since becoming fluent on this subject is indispensable.
+In fact, the grammar used in `ggplot2` package is broad and far from simple at first glance. But as you practice, it becomes increasingly graspable. Still, I encourage you to dive into the amazing @ggplotbook, since becoming fluent on this subject is indispensable.
 
 Let's think about the process of making a graphic as a set of layers arranged sequentially. The first layer is the data you want to plot -- we'll use the CPI data frame from the Importing section. The second layer is the `ggplot` function. So far, there's nothing to visualize -- all these two layers do is set the stage for what's coming next.
 
 ```{r}
 #| eval: FALSE
-cpi_tbl |> 
+|> |> 
   ggplot()
 ```
 
@@ -1084,7 +1084,7 @@ cpi_tbl |>
   )
 ```
 
-Note that `ggplot` automatically assigns colors to attributes and adds a legend. So, we might be interested in customizing both the attribute colors and the legend position. Again, this can be achieved by adding two specific layers. The logic remains the same: **parameters inside `aes` turn a variable into an attribute, which can then be customized using specific layers**.
+Note that `ggplot` automatically assigns colors to attributes and adds a legend. So, we might be interested in customizing both the attribute colors and the legend position. Again, this can be achieved by adding two specific layers. The logic remains the same: parameters inside `aes` turn a variable into an attribute, which can then be customized using specific layers.
 
 ```{r}
 cpi_tbl |>

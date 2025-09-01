@@ -1,4 +1,4 @@
-# Scaling-up tasks
+# Scaling-up tasks {#scaling-up}
 
 In the introductory chapter, we saw how to import, organize, and visualize data. However, little attention was given to situations that require greater efficiency or scalability. This chapter takes a step further by extending the previous knowledge to deal with more challenging scenarios.
 
