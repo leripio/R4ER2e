@@ -21,30 +21,35 @@ library(R4ER2data)
 perfume_prices_cpi_br <- R4ER2data::perfume_prices_cpi_br
 ```
 
-The first step is to define our sampling scheme. At its most basic level, this means setting aside one part of the sample to fit the model and another to test its accuracy. Ideally, we would also reserve a portion of the sample to tune the model’s parameters. In practice, however — especially when working with time series — we often lack a large number of observations to allow for many splits. For this reason, the most common approaches are the train/test split or the rolling window scheme. These can be implemented using the `initial_time_split` and `rolling_origin` functions from the `rsample` package, which is part of the `tidymodels` framework. 
+The first step is to define our sampling scheme. At its most basic level, this means setting aside one part of the sample to fit the model and another to test its accuracy. Ideally, we would also reserve a portion of the sample to tune the model's parameters. In practice, however — especially when working with time series — we often lack a large number of observations to allow for many splits. For this reason, the most common approaches are the train/test split or the rolling window scheme. These can be implemented using the `initial_time_split` and `rolling_origin` functions from the `rsample` package, which is part of the `tidymodels` framework. 
 
-For this exercise, we will choose the train/test split and use 75% of the sample to fit the model and the remaining 25% to test its accuracy.
+For this exercise, we will use a train/test split, assigning 75% of the sample to fit the model and the remaining 25% to test its accuracy. The `training()` and `testing()` functions extract the portions of the sample reserved for training and testing, respectively.
 
 ```{r}
 #| message: false
 #| warning: false
 library(tidymodels)
 
-perfume_split <- perfume_prices_cpi_br|> 
+perfume_split <- perfume_prices_cpi_br |> 
+  arrange(date) |> 
+  mutate(
+    cpi_perfume_lag1 = dplyr::lag(cpi_perfume, 1),
+    cpi_perfume_lag2 = dplyr::lag(cpi_perfume, 2)
+  ) |> 
   initial_time_split(prop = 3/4)
 
-perfume_train <- perfume_split |> analysis()
-perfume_test  <- perfume_split |> assessment()
+perfume_train <- perfume_split |> training()
+perfume_test  <- perfume_split |> testing()
 ```
 
-Next, we need to create the recipe for this model — that is, a set of instructions specifying how the data should be preprocessed. This step must be applied only to the training portion of the sample, since applying transformations to the entire dataset could contaminate the test sample. For our purposes, we will simply specify the model — the CPI for perfume as the outcome, using all variables except the date as predictors — and normalize all predictors.
+Next, we need to create the recipe for this model — that is, a set of instructions specifying how the data should be preprocessed. This step must be applied only to the training portion of the sample, since applying transformations to the entire dataset could contaminate the test sample — for example, normalizing the predictors requires the mean and standard deviation, which vary depending on the subset of data considered. For our purposes, the recipe begins with the model formula (the CPI for perfume as a function of all the columns in the dataset). We then remove the date variable and normalize the predictors.
 
 ```{r}
 #| message: false
 #| warning: false
 model_recipe <- recipe(cpi_perfume ~ ., data = perfume_train) |>
   step_rm('date') |> 
-  step_normalize(all_numeric_predictors())
+  step_normalize(starts_with('product')) 
 ```
 
 Now, we need to specify which model to use. This is one of the most powerful features of the `tidymodels` framework: we can switch between algorithms by changing just a few lines of code. In this example, we will fit an XGBoost model, which falls under the `boost_tree()` specification. Since multiple packages can implement the same algorithm, we use the `set_engine()` function to choose the desired one — in this case, the `xgboost` package.
@@ -55,6 +60,7 @@ Notice that the XGBoost algorithm has several parameters that can be tuned — y
 #| message: false
 #| warning: false
 library(xgboost)
+
 xgb_model <- 
   boost_tree(trees = tune()) |> 
   set_mode("regression") |> 
@@ -96,16 +102,17 @@ tuned_values <- tune_grid(
   control   = control_grid(save_pred = TRUE)
 )
 
+best_tree <- select_best(tuned_values, metric = 'rmse')
+
 show_best(tuned_values, metric = 'rmse')
 ```
 
-We can see that, according to the Root Mean Squared Error (RMSE) metric, the value of the trees parameter that minimizes the error is 13 — although other values yield virtually the same result. To complete the model fitting process, we will use this value to train the model on the full training sample. Finally, the `collect_metrics()` function returns the accuracy metrics evaluated on the test sample.
+We can see that, according to the Root Mean Squared Error (RMSE) metric, the value of the trees parameter that minimizes the error is `r best_tree$trees` — although other values yield similar results. To complete the model fitting process, we will use this value to train the model on the full training sample. Finally, the `collect_metrics()` function returns the accuracy metrics evaluated on the test sample.
 
 ```{r}
-best_tree <- select_best(tuned_values, metric = 'rmse')
-final_wf  <- finalize_workflow(model_wf, best_tree)
 
-xgb_fit <- final_wf |> 
+final_wf  <- finalize_workflow(model_wf, best_tree)
+xgb_fit   <- final_wf |> 
   last_fit(perfume_split)
 
 xgb_fit |> 
@@ -119,18 +126,22 @@ While a full discussion of interpretability is beyond the scope of this book, th
 #| message: false
 #| warning: false
 library(vip)
+
 xgb_fit |> 
   extract_fit_parsnip() |> 
   vip()
 ```
 
-Notice that we used the `extract_fit_parsnip()` function to retrieve the fitted model from the workflow object. The same approach should be used when applying the model to generate forecasts on new data.
+Notice that we used the `extract_fit_parsnip()` function to retrieve the fitted model from the workflow object. The same approach should be used when applying the model to generate forecasts on new data. It is also important to apply all preprocessing steps to the new data — in this case, the normalization of the predictors. This can be done using the `prep()` and `bake()` functions: `prep()` computes the mean and standard deviation based on the training sample, and `bake()` applies these parameters to normalize the new data. If you prefer to generate fresh estimates that incorporate the full sample (including the new data), you would need to compute them manually.
 
 ```{r}
+perfume_new_data <- prep(model_recipe) |> 
+  bake(perfume_test)
+
 xgb_fcast <- predict(
   extract_fit_parsnip(xgb_fit), 
-  perfume_test
+  perfume_new_data
 )
 ```
 
-This concludes the basic workflow for estimating and applying machine learning models to make predictions. The attentive reader may have noticed that the accuracy results were not very impressive, with the in-sample RMSE (1.31) being much lower than the out-of-sample RMSE (3.40), which is clear evidence of overfitting. There is still much work to be done — for example, by tuning additional parameters. Other possibilities include fitting multiple models and combining them into an ensemble.
+This concludes the basic workflow for estimating and applying machine learning models to make predictions. The attentive reader may have noticed that the accuracy results were not very impressive, with the in-sample RMSE (`r round(show_best(tuned_values, metric = 'rmse')$mean[1], 2)`) being much lower than the out-of-sample RMSE (`r round(collect_metrics(xgb_fit)$.estimate[1], 2)`), which is evidence of potential overfitting. There is still much work to be done — for example, by tuning additional parameters. Other possibilities include fitting multiple models and combining them into an ensemble. These topics, however, are beyond the scope of this book.
