@@ -95,7 +95,7 @@ We can now see that several time series closely follow the target. Our main goal
 
 To summarize a large data set into a few key factors, Principal Components Analysis (PCA) is often the go-to tool. Essentially, PCA leverages the eigenvalues and eigenvectors of the covariance matrix to extract factors that explain the variability in the data. Its main advantages are its simplicity and low computational cost, which make it both easy to implement and fast to compute.
 
-However, PCA has its limitations. It is not ideally suited for time series data, as it does not account for autocorrelation. In such cases, the Dynamic Factor Model (DFM), discussed in Chapter 18, provides a more appropriate alternative. Additionally, PCA is an unsupervised method, meaning it does not consider the target variable when computing factors. As a result, the computed factors may or may not be relevant to the target variable -- something we can explore later using a regression model. This will become clearer soon.
+However, PCA has its limitations. It is not ideally suited for time series data, as it does not account for autocorrelation. In such cases, the Dynamic Factor Model (DFM), discussed in Chapter 19, provides a more appropriate alternative. Additionally, PCA is an unsupervised method, meaning it does not consider the target variable when computing factors. As a result, the computed factors may or may not be relevant to the target variable -- something we can explore later using a regression model. This will become clearer soon.
 
 The first step is to convert the data into a matrix. Next, we call the `prcomp` function from the `stats` package. Note that we have chosen not to center or scale the data, as these preprocessing steps were already applied earlier.
 
@@ -137,13 +137,13 @@ perfume_prices_pca_df |>
     values_to = 'serie'
   ) |> 
   ggplot(aes(x = date)) +
-  geom_line(aes(y = cpi_perfume, color = 'CPI'), lwd = 1) +
-  geom_line(aes(y = serie), lwd = 1) +
+  geom_line(aes(y = cpi_perfume), color = 'black', lwd = 1) +
+  geom_line(aes(y = serie), color = 'red', lwd = 1) +
   scale_y_continuous(labels = function(x) paste0(x, '%')) +
   scale_x_date(date_breaks = '6 months', date_labels = '%b/%y') +
   facet_wrap(~ pc, scales = 'free_y') +
   labs(
-    title = 'CPI for Perfumes vs. Principal Components',
+    title = 'CPI for Perfumes (black) vs. Principal Components (red)',
     x = '',
     y = ''
   )
@@ -264,7 +264,7 @@ plot(lambda_cv)
 
 ```
 
-The red dots are the mean squared error (MSE) obtained from the k-fold cross-validation along the `\lambda` sequence (the x axis). The two vertical dashed lines indicate the value of $\lambda$ that minimizes the MSE and the most regularized model such that the cross-validated error is within one standard error of the minimum, respectively. The top horizontal axis shows the number of predictors for each setting.
+The red dots are the mean squared error (MSE) obtained from the k-fold cross-validation along the $\lambda$ sequence (the x axis). The two vertical dashed lines indicate the value of $\lambda$ that minimizes the MSE and the most regularized model such that the cross-validated error is within one standard error of the minimum, respectively. The top horizontal axis shows the number of predictors for each setting.
 
 The resulting object contains a `coef` method that allows us to examine the selected variables and their coefficients for any $\lambda$ in the sequence. Additionally, it provides text shortcuts for the two values indicated by the vertical dashed lines.
 

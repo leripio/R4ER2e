@@ -2,7 +2,7 @@
 
 In the previous chapter, we went through all the steps to perform the seasonal adjustment of a time series, using an indicator from Brazilian retail sales to illustrate the technique. However, one detail was left between the lines: the method employed, namely the U.S Census Bureau's X-13-ARIMA, is well suited for monthly and quarterly data, but was not particularly designed for high-frequency data.
 
-Until recently, this wasn't much of an issue, but the growing use of alternative data has made it a real limitation. Fortunately, there are a handful of tools available to work with this type of data, each with its own pros and cons. For the purposes of this chapter, I will present two methods that I consider the most useful for day-to-day applications, using the `credit_card_br` dataset, which contains alternative indicators for economic activity in Brazil based on credit card transactions.
+Until recently, this wasn't much of an issue, but the growing use of alternative data has made it a real limitation. Fortunately, there are tools available to work with this type of data, each with its own pros and cons. For the purposes of this chapter, I will present two methods that I consider the most useful for day-to-day applications, using the `credit_card_br` dataset, which contains alternative indicators for economic activity in Brazil based on credit card transactions.
 
 ::: {.callout-tip}
 ## Data
@@ -53,7 +53,7 @@ For this reason, we seek to employ effective methods to identify and estimate th
 
 [Prophet](https://facebook.github.io/prophet/) is a forecasting model developed by Meta, designed to handle time series of various frequencies. Among other outputs, it returns the fitted and future values for the time series components (trend and seasonality), allowing us to compute a seasonally adjusted version of the data. Importantly, this method also supports the inclusion of special events, such as outliers and custom holidays, which increases the robustness of the results.
 
-Let's start by preparing the input data. Prophet requires a data frame with two columns: *ds*, which contains the dates; and *y*, which contains the target time series. Taking the logarithm of *y* helps reduce volatility and makes the relationship between its components linear.
+Let's start by preparing the input data. Prophet requires a data frame with two columns: `ds`, which contains the dates; and `y`, which contains the target time series. Taking the logarithm of `y` helps reduce volatility and makes the relationship between its components linear.
 
 ```{r}
 goods_df <- credit_card_br |> 
@@ -61,7 +61,7 @@ goods_df <- credit_card_br |>
   mutate(y = log(y))
 ```
 
-Since Black Friday is an important event for retail sales, it makes sense to include it in the model. For this purpose, we need to create an additional data frame with two columns: *ds* (dates) and *holiday* (the event's label). Any other special events can be added to this data frame.
+Since Black Friday is an important event for retail sales, it makes sense to include it in the model. For this purpose, we need to create an additional data frame with two columns: `ds` (dates) and `holiday` (the event's label). Any other special events can be added to this data frame.
 
 To create the vector with the Black Friday dates for each year in the dataset, I will take advantage of the `Thanksgiving` dates vector provided by the `tis` package.
 
@@ -82,7 +82,7 @@ special_events <- tibble(
 ) 
 ```
 
-The process of fitting the model is carried out in layers, where we first layer define some preliminary settings and the model is then estimated using the `fit.prophet` function.
+The process of fitting the model is carried out in layers: the first layer defines some preliminary settings, and the model is then estimated using the `fit.prophet` function.
 
 ```{r}
 #| warning: false
@@ -99,7 +99,7 @@ We can access all the holidays and special events included in the model through 
 m$train.holiday.names
 ```
 
-Many important holidays in Brazil are not included in the built-in holidays vector and could be added to the `special_events` data frame. However, I will leave that aside for now and move forward. The next step is to create a data frame with future dates for prediction. Even though we are not interested in future values, this step is necessary to obtain a tidy outcome.
+Many important holidays in Brazil are not included in the built-in holidays vector and could be added to the `special_events` data frame. However, I will leave that aside for now and move forward. The next step is to create a data frame with future dates for prediction. Even though we are not interested in future values, this step is necessary to obtain the outcome.
 
 ```{r}
 future_df <- make_future_dataframe(
@@ -112,13 +112,13 @@ future_df <- make_future_dataframe(
 m_forecast <- predict(m, future_df)
 ```
 
-The `m_forecast` object contains all the components estimated by the model, including the aggregate seasonal effect and the individual effects of each holiday or special event. We can easily visualize them using the appropriate function.
+The `m_forecast` object contains all the components estimated by the model, including the aggregate seasonal effect and the individual effects of each holiday or special event. We can easily visualize them using the `prophet_plot_components()` function.
 
 ```{r}
 prophet_plot_components(m, m_forecast)
 ```
 
-The first panel shows the trend, which was severely hit by the COVID-19 episode and returned to the pre-pandemic levels by mid-2021. The next three panels provide information about the series' seasonal pattern. More specifically, retail sales experience a sharp drop every December 25th and January 1st (panel 2), a justified occurrence since the majority of brick-and-mortar stores are closed on these days. The same reasoning above explains why lower sales are recorded on Sundays (panel 3).
+The first panel shows the estimated trend, which was severely hit by the COVID-19 episode and returned to the pre-pandemic levels by mid-2021. The next three panels provide information about the series' seasonal pattern. More specifically, retail sales experience a sharp drop every December 25th and January 1st (panel 2), a justified occurrence since the majority of brick-and-mortar stores are closed on these days. The same reasoning above explains why lower sales are recorded on Sundays (panel 3).
 
 While most holidays show a modest impact, the Black Friday event, as expected, has a significant positive effect on sales (panel 2). Regarding the yearly pattern (panel 4), it's no surprise that sales exhibit an upward trend starting in the last quarter of the year, reaching a peak in December.
 
@@ -153,7 +153,7 @@ goods_df_sa |>
 
 The plot above shows that we were able to eliminate the largest regularly spaced peaks and troughs, although some residual seasonality might still be present in the data. From this point onward, it's a matter of addressing the remaining holidays and special events that might still affect the model estimates until we feel comfortable with the result.
 
-Additionally, other features, such as trend changepoints, might play a role. To explore the additional features available in Prophet and better understand how to fine-tune its default parameters, I strongly recommend reading the package's [documentation](https://facebook.github.io/prophet/docs/quick_start.html#r-api).
+Additionally, other features — such as trend changepoints — may also play a role. To explore the full range of features available in Prophet and gain a deeper understanding of how to fine-tune its default parameters, I strongly recommend consulting the package’s [documentation](https://facebook.github.io/prophet/docs/quick_start.html#r-api).
 
 ### DSA
 
@@ -161,7 +161,7 @@ The Daily Seasonal Adjustment (DSA) is a method proposed by Daniel Ollech for pe
 
 As for its application, the `dsa` function offers many arguments to control the resulting series. Readers are also encouraged to consult the package [vignette](https://cran.r-project.org/web/packages/dsa/index.html) for further guidance. For our purposes, it will suffice to demonstrate how to implement the method to address common tasks.  
 
-We'll use the same time series as before — namely, credit card expenditures on goods. Unlike Prophet, however, the `dsa` function expects the input time series to be an xts object. So the first step is to create the appropriate object. 
+We'll use the same time series as before — namely, credit card expenditures on goods. Unlike Prophet, however, the `dsa` function expects the input time series to be an `xts` object. So the first step is to create the appropriate object. 
 
 ```{r}
 goods_xts <- xts::as.xts(x = goods_df$y, order.by = as.Date(goods_df$ds))
@@ -238,4 +238,4 @@ goods_dsa |>
 
 <br>
 
-The figure reveals large spikes in several data points, which may be due to a variety of causes — such as omitted holidays, promotions, or even random noise. It's the analyst's duty to investigate these movements and address them when appropriate in order to produce reliable results.
+Although the noticeable seasonality has disappeared, the figure still reveals large spikes at several data points, which may be due to a variety of causes — such as omitted holidays, promotions, or even random noise. It is the analyst's responsibility to investigate these movements and address them when appropriate in order to produce reliable results.

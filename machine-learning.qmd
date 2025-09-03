@@ -42,7 +42,7 @@ perfume_train <- perfume_split |> training()
 perfume_test  <- perfume_split |> testing()
 ```
 
-Next, we need to create the recipe for this model — that is, a set of instructions specifying how the data should be preprocessed. This step must be applied only to the training portion of the sample, since applying transformations to the entire dataset could contaminate the test sample — for example, normalizing the predictors requires the mean and standard deviation, which vary depending on the subset of data considered. For our purposes, the recipe begins with the model formula (the CPI for perfume as a function of all the columns in the dataset). We then remove the date variable and normalize the predictors.
+Next, we need to create the recipe for this model — that is, a set of instructions specifying how the data should be preprocessed. This step must be applied only to the training portion of the sample, since applying transformations to the entire dataset could contaminate the training process — a problem known as data leakage. For example, normalizing the predictors requires the mean and standard deviation, which vary depending on the subset of data considered. For our purposes, the recipe begins with the model formula (the CPI for perfume as a function of all the columns in the dataset). We then remove the date variable and normalize the predictors.
 
 ```{r}
 #| message: false
@@ -79,7 +79,7 @@ The tuning step consists of finding the value of the `trees` parameter that maxi
 
 The `tune` package — also part of the `tidymodels` framework — makes it straightforward to tune parameters using sampling techniques. In this case, we need a sampling scheme that generates multiple samples to test the parameter values, so we will use the `rolling_origin` method: 30 observations will be used to fit the model for each value of the `trees` parameter, leaving 1 observation for testing. Since our training set consists of only 43 observations, this procedure will generate 13 evaluation points for each parameter value.
 
-But where do these candidate values come from? There are several possibilities. The most common strategies are to test a set of commonly used values for the parameter, to define a grid of candidate values, or to sample values from a distribution. Here, we will take the intermediate approach by performing a grid search, defining a hyperparameter space ranging from 5 to 20 for the `trees` parameter.
+But where do these candidate values come from? There are several possibilities. The most common strategies are: (1) testing a set of commonly used values for the parameter, (2) defining a grid of candidate values, or (3) sampling values from a distribution. In this exercise, we will take the intermediate approach by performing a grid search, defining a hyperparameter space ranging from 5 to 20 for the `trees` parameter.
 
 ```{r}
 #| cache: true
@@ -132,7 +132,7 @@ xgb_fit |>
   vip()
 ```
 
-Notice that we used the `extract_fit_parsnip()` function to retrieve the fitted model from the workflow object. The same approach should be used when applying the model to generate forecasts on new data. It is also important to apply all preprocessing steps to the new data — in this case, the normalization of the predictors. This can be done using the `prep()` and `bake()` functions: `prep()` computes the mean and standard deviation based on the training sample, and `bake()` applies these parameters to normalize the new data. If you prefer to generate fresh estimates that incorporate the full sample (including the new data), you would need to compute them manually.
+Notice that we used the `extract_fit_parsnip()` function to retrieve the fitted model from the workflow object. The same approach should be used when applying the model to generate forecasts on new data. It is also important to apply all preprocessing steps to the new data — in this case, the normalization of the predictors. This can be done using the `prep()` and `bake()` functions from the `recipes` package: `prep()` computes the mean and standard deviation based on the training sample, and `bake()` applies these parameters to normalize the new data. If you prefer to generate fresh estimates that incorporate the full sample (including the new data), you would need to compute them manually.
 
 ```{r}
 perfume_new_data <- prep(model_recipe) |> 
@@ -144,4 +144,4 @@ xgb_fcast <- predict(
 )
 ```
 
-This concludes the basic workflow for estimating and applying machine learning models to make predictions. The attentive reader may have noticed that the accuracy results were not very impressive, with the in-sample RMSE (`r round(show_best(tuned_values, metric = 'rmse')$mean[1], 2)`) being much lower than the out-of-sample RMSE (`r round(collect_metrics(xgb_fit)$.estimate[1], 2)`), which is evidence of potential overfitting. There is still much work to be done — for example, by tuning additional parameters. Other possibilities include fitting multiple models and combining them into an ensemble. These topics, however, are beyond the scope of this book.
+This concludes the basic workflow for estimating and applying machine learning models to make predictions. The attentive reader may have noticed that the accuracy results were not very impressive, with the in-sample RMSE (`r round(show_best(tuned_values, metric = 'rmse')$mean[1], 2)`) being much lower than the out-of-sample RMSE (`r round(collect_metrics(xgb_fit)$.estimate[1], 2)`), which is evidence of potential overfitting. There is still much work to be done — such as tuning the remaining parameters or fitting multiple models and combining them into an ensemble. The `tidymodels` framework provides specific packages for these tasks, such as `stacks` (for model stacking) and `workflowsets` (for managing multiple model specifications). A detailed discussion of these approaches, however, is beyond the scope of this book.
