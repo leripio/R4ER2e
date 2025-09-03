@@ -4,7 +4,7 @@ I'm deeply grateful to [Igor Martins](http://linkedin.com/in/igor-ferreira-batis
 
 ## Introduction
 
-All the models we have developed so far were estimated entirely within the frequentist paradigm. Regression models were estimated using standard Ordinary Least Squares (OLS), while latent variables in state-space models were computed via Maximum Likelihood (ML). OLS estimates the coefficients by minimizing the sum of squared residuals — the differences between observed and fitted values — whereas ML estimates the coefficients by maximizing the likelihood function. Despite this difference in approach, both methods rely exclusively on information contained in the data sample for coefficient estimation, leaving no room to incorporate prior knowledge or other external sources of information.
+The models we have developed in this book were estimated entirely within the frequentist paradigm. Regression models were estimated using standard Ordinary Least Squares (OLS), while latent variables in state-space models were computed via Maximum Likelihood (ML). OLS estimates the coefficients by minimizing the sum of squared residuals — the differences between observed and fitted values — whereas ML estimates the coefficients by maximizing the likelihood function. Despite this difference in approach, both methods rely exclusively on information contained in the data sample for coefficient estimation, leaving no room to incorporate prior knowledge or other external sources of information.
 
 Bayesian inference adds two key features. First, it incorporates prior information about the coefficients alongside sample data, giving expert knowledge or beliefs a central role in the estimation procedure. Second, rather than producing a single point estimate for the parameters, it generates a full distribution (the posterior), providing a richer understanding of the uncertainty surrounding these estimates.
 
@@ -110,7 +110,7 @@ In its simplest form, Stan requires three essential blocks: `data`, `parameters`
 
 $$ Y_t = \beta_1 + \beta_2 * X_t + \epsilon_t $$ The available data for this model are the variables $Y_t$ and $X_t$ and the parameters we aim to estimate are $\beta_1$, $\beta_2$, and $\sigma^2$, the variance of the error term. The model block specifies the likelihood and the priors for the coefficients. The likelihood depends on the assumption made for the error term, as discussed in the introduction. Assuming a Normal distribution for the error term $\epsilon_t$, the likelihood is:
 
-$$ Y_t \sim \mathbb{N}(\beta_1 + \beta_2 * X_t,\sigma^2) $$ For the priors, we can assume:
+$$ Y_t \sim \mathbb{N}(\beta_1 + \beta_2 X_t,\sigma^2) $$ For the priors, we can assume:
 
 -   A Normal distribution with parameters $\mu = 0$ and $\sigma^2 = 1$ for $\beta_1$, indicating that $\beta_1$ can take both negative and positive values, although with a higher probability of being close to zero.
 
